@@ -525,6 +525,17 @@ body.glisse, body.glisse * { cursor: grabbing !important; user-select: none; }
 .side .mark i.batt { --accent: var(--ora); --glow: var(--ora); animation: batt-rond .32s ease-out; }
 .fab.batt { border-color: var(--ora); color: var(--ora); animation: batt-btn .32s ease-out; }
 @media (prefers-reduced-motion: reduce) { .side .mark i.v-off { animation: none; } .side .mark i.batt, .fab.batt { animation: none; } }
+.qui { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 12px; }
+.cform label.qrow { display: flex; align-items: center; gap: 10px; padding: 6px 4px; cursor: pointer; border-radius: 12px; position: relative; }
+.qrow input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.qsvg { width: 22px; height: 22px; flex: none; overflow: visible; }
+.qsvg circle, .qsvg path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.qbase { stroke: var(--muted); stroke-width: 1.5; opacity: .55; transition: opacity .2s, stroke .2s; }
+.qring { stroke: var(--accent); stroke-width: 2; transform: rotate(-90deg); transform-origin: 12px 12px; stroke-dasharray: 100; stroke-dashoffset: 100; }
+.qfill { stroke: var(--accent); }
+.qchk { stroke: var(--bg); stroke-width: 2.4; stroke-dasharray: 100; stroke-dashoffset: 100; }
+.qrow:hover .qbase { opacity: 1; stroke: var(--accent); }
+.qrow input:focus-visible + .qsvg { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 50%; }
 /* iPhone : un champ dont le texte fait moins de 16 px déclenche un zoom automatique à la saisie. */
 @media (max-width: 700px) { input, select, textarea { font-size: 16px !important; } }
 </style>
@@ -946,7 +957,7 @@ function htmlConsignes() {
     <form class="cform" id="cform">
       <label><span class="mono">Pour</span><select id="cto">${optionsPour().map(([k, n]) => `<option value="${k}">${esc(n)}</option>`).join('')}</select></label>
       <label><span class="mono">Onglet</span><select id="con"></select></label>
-      <label><span class="mono">Qui</span><select id="cqui"><option value="">Personne en particulier</option>${QUI.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')}</select></label>
+      <div class="qgrp"><span class="mono">Qui (une ou plusieurs personnes)</span><div class="qui" id="cqui">${QUI.map(n => `<label class="qrow"><input type="checkbox" value="${esc(n)}"><svg class="qsvg" viewBox="0 0 24 24" aria-hidden="true"><circle class="qbase" cx="12" cy="12" r="10.5"/><circle class="qring" cx="12" cy="12" r="10.5" pathLength="100"/><circle class="qfill" cx="12" cy="12" r="10.5" stroke-width="0"/><path class="qchk" d="M7 12.6l3.3 3.3L17.2 9" pathLength="100"/></svg><span>${esc(n)}</span></label>`).join('')}</div></div>
       <div class="tpls" id="tpls"></div>
       <label><span class="mono">Consigne</span><textarea id="ctx" placeholder="Ce que la personne doit faire" required></textarea></label>
       <button type="button" class="cs-link" id="savetpl">Enregistrer ce texte comme modèle</button>
@@ -986,6 +997,20 @@ function ouvrirConsignes() {
   liaisonsConsignes();
 }
 function rafraichirConsignes() { sauverConsignes(); document.getElementById('dbody').innerHTML = htmlConsignes(); liaisonsConsignes(); renderApp(); }
+/* Case ronde du champ « Qui » : l'anneau se crée par l'extérieur, se remplit vers l'intérieur, puis le V se dessine. */
+async function animerQui(row, on) {
+  const ring = row.querySelector('.qring'), fill = row.querySelector('.qfill'), chk = row.querySelector('.qchk'), tk = Symbol(); row._tk = tk;
+  const vivant = () => row._tk === tk;
+  const regler = (a, f, c) => { ring.style.strokeDashoffset = 100 * (1 - a); const w = 10.5 * f; fill.setAttribute('r', Math.max(0.01, 10.5 - w / 2)); fill.setAttribute('stroke-width', w); chk.style.strokeDashoffset = 100 * (1 - c); };
+  if (sansAnim()) { on ? regler(1, 1, 1) : regler(0, 0, 0); return; }
+  if (on) {
+    await tween(300, k => { if (vivant()) regler(k, 0, 0); }, easeIO);
+    await tween(240, k => { if (vivant()) regler(1, k, 0); }, easeIO);
+    await tween(220, k => { if (vivant()) regler(1, 1, k); }, easeIO);
+  } else {
+    await tween(200, k => { if (vivant()) regler(1 - k, 1 - k, 1 - k); }, easeIO);
+  }
+}
 function liaisonsConsignes() {
   const corps = document.getElementById('dbody');
   corps.querySelectorAll('[data-goto]').forEach(b => b.addEventListener('click', () => { const t = b.dataset.goto; fermerPanneau(); if (location.hash.slice(1) === t) renderApp(); else location.hash = t; }));
@@ -1010,11 +1035,13 @@ function liaisonsConsignes() {
     const dessinerModeles = () => { tp.innerHTML = '<span class="mono">Modèles</span>' + modeles.map((m, i) => `<button type="button" class="chip" data-tpl="${i}">${esc(m)}</button>`).join(''); tp.querySelectorAll('[data-tpl]').forEach(b => b.addEventListener('click', () => { document.getElementById('ctx').value = modeles[Number(b.dataset.tpl)]; })); };
     dessinerModeles();
     document.getElementById('savetpl').addEventListener('click', () => { const t = document.getElementById('ctx').value.trim(); if (t && !modeles.includes(t)) { modeles.push(t); sauver('pilotage-mod', modeles); dessinerModeles(); } });
+    f.querySelectorAll('#cqui .qrow').forEach(row => { const inp = row.querySelector('input'); inp.addEventListener('change', () => animerQui(row, inp.checked)); });
     f.addEventListener('submit', e => {
       e.preventDefault();
       const texte = document.getElementById('ctx').value.trim(); if (!texte) return;
-      const qui = document.getElementById('cqui').value || null, base = Date.now();
-      const cibles = to.value === 'ops' ? OPS_DIRS : [to.value === 'it' && qui === 'Théo' ? 'theo' : to.value];   /* Théo a son propre compte */
+      const noms = [...f.querySelectorAll('#cqui input:checked')].map(i => i.value), qui = noms.length ? noms.join(', ') : null, base = Date.now();
+      let cibles = to.value === 'ops' ? OPS_DIRS.slice() : [to.value];
+      if (to.value === 'it' && noms.includes('Théo')) cibles = noms.length === 1 ? ['theo'] : ['it', 'theo'];   /* Théo a son propre compte */
       cibles.forEach((r, i) => consignes.push({ id: base + i, to: r, qui, onglet: on.value || null, texte, echeance: document.getElementById('cech').value || null, urgent: document.getElementById('curg').checked, rep: document.getElementById('crep').checked, rappel: document.getElementById('cmail').checked, statut: 'envoyee' }));
       rafraichirConsignes();
     });
