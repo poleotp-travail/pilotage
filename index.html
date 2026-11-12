@@ -934,7 +934,7 @@ function htmlConsigne(c, sup) {
   const lien = c.onglet && ROLES[sup ? c.to : roleId].onglets.includes(c.onglet) ? `<button class="cs-link" data-goto="${c.onglet}">Ouvrir l'onglet ${esc(NOMS[c.onglet])}</button>` : '';
   const tags = (c.rep ? '<span class="tag">Chaque semaine</span>' : '') + (sup && c.rappel ? (enRetard(c) ? '<span class="tag mail">Mail de rappel envoyé (simulation)</span>' : '<span class="tag mail">Rappel par mail si en retard</span>') : '');
   const meta2 = tags ? `<div class="tags">${tags}</div>` : '';
-  const haut = `<div class="cs-top"><span class="mono">${sup ? 'Pour ' + esc(ROLES[c.to].nom) + ' · ' : ''}${c.onglet ? esc(NOMS[c.onglet]) : 'Général'}</span>${chipStatut(c)}</div>`;
+  const haut = `<div class="cs-top"><span class="mono">${sup ? 'Pour ' + esc(ROLES[c.to].nom) + ' · ' : ''}${c.onglet ? esc(NOMS[c.onglet]) : 'Général'}${c.qui ? ' · ' + esc(c.qui) : ''}</span>${chipStatut(c)}</div>`;
   if (sup) return `<article class="cs${c.urgent && c.statut !== 'faite' ? ' urg' : ''}${c.statut === 'faite' ? ' faite' : ''}" data-cs="${c.id}">${haut}<p>${esc(c.texte)}</p>${meta}${meta2}${c.note ? `<p class="dnote">Réponse : ${esc(c.note)}</p>` : ''}<button class="cs-del" data-del="${c.id}">Retirer</button></article>`;
   if (c.statut === 'faite') return `<article class="cs faite" data-cs="${c.id}">${haut}<p>${esc(c.texte)}</p>${c.note ? `<p class="dnote">Ton commentaire : ${esc(c.note)}</p>` : ''}</article>`;
   return `<article class="cs${c.urgent ? ' urg' : ''}" data-cs="${c.id}">${haut}<p>${esc(c.texte)}</p>${meta}${meta2}${lien}<div class="cs-act"><input class="cs-note" placeholder="Commentaire (facultatif)" aria-label="Commentaire"><button class="btn small" data-fait="${c.id}">Fait</button></div></article>`;
@@ -944,8 +944,9 @@ function htmlConsignes() {
     const liste = consignes.slice().reverse().map(c => htmlConsigne(c, true)).join('');
     return `<span class="mono">Pour toute l'équipe</span><h3>Consignes</h3>
     <form class="cform" id="cform">
-      <label><span class="mono">Pour</span><select id="cto">${destinataires().map(k => `<option value="${k}">${esc(ROLES[k].nom)}</option>`).join('')}</select></label>
+      <label><span class="mono">Pour</span><select id="cto">${optionsPour().map(([k, n]) => `<option value="${k}">${esc(n)}</option>`).join('')}</select></label>
       <label><span class="mono">Onglet</span><select id="con"></select></label>
+      <label><span class="mono">Qui</span><select id="cqui"><option value="">Personne en particulier</option>${QUI.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')}</select></label>
       <div class="tpls" id="tpls"></div>
       <label><span class="mono">Consigne</span><textarea id="ctx" placeholder="Ce que la personne doit faire" required></textarea></label>
       <button type="button" class="cs-link" id="savetpl">Enregistrer ce texte comme modèle</button>
@@ -968,6 +969,11 @@ function htmlConsignes() {
     ${a.length ? a.map(c => htmlConsigne(c, false)).join('') : '<p class="empty">Rien à faire pour le moment.</p>'}
     ${f.length ? `<span class="mono">Faites (${f.length})</span>${f.map(c => htmlConsigne(c, false)).join('')}` : ''}`;
 }
+/* Formulaire de consigne (superviseur et franchisé) : « Pour » = profil qui reçoit, « Qui » = personne concernée. */
+const POUR = [['rhadmin', 'RH administratif'], ['formation', 'Formation'], ['it', 'IT et maintenance'], ['rh', 'RH opérationnel'], ['ops', 'Opérationnel']];
+const QUI = ['Pascale', 'Prudence', 'Alice', 'Émilie', 'Théo', 'Madison', 'Antonio', 'Directeur Istres 1', 'Adrien'];
+const OPS_DIRS = ['dir905', 'dir525', 'dir649'];   /* « Opérationnel » = une consigne pour chaque directeur */
+const optionsPour = () => POUR.filter(([k]) => k !== 'rhadmin' || roleId === 'franchise');
 function consignesDe(role) { return consignes.filter(c => c.to === role); }
 function ouvrirConsignes() {
   panneau = 'consignes';
@@ -989,7 +995,7 @@ function liaisonsConsignes() {
     if (c.rep && !c.suivie) {
       const auj = aujourdhui(0), base = c.echeance && c.echeance > auj ? c.echeance : auj;
       c.suivie = true;
-      consignes.push({ id: Date.now() + 1, to: c.to, onglet: c.onglet, texte: c.texte, echeance: addJours(base, 7), urgent: c.urgent, rep: true, rappel: c.rappel, statut: 'envoyee' });
+      consignes.push({ id: Date.now() + 1, to: c.to, qui: c.qui || null, onglet: c.onglet, texte: c.texte, echeance: addJours(base, 7), urgent: c.urgent, rep: true, rappel: c.rappel, statut: 'envoyee' });
     }
     rafraichirConsignes();
   }));
@@ -997,7 +1003,7 @@ function liaisonsConsignes() {
   const f = document.getElementById('cform');
   if (f) {
     const to = document.getElementById('cto'), on = document.getElementById('con');
-    const maj = () => { on.innerHTML = '<option value="">Général</option>' + ROLES[to.value].onglets.map(o => `<option value="${o}">${esc(NOMS[o])}</option>`).join(''); };
+    const maj = () => { on.innerHTML = '<option value="">Général</option>' + ROLES[to.value === 'ops' ? 'dir905' : to.value].onglets.map(o => `<option value="${o}">${esc(NOMS[o])}</option>`).join(''); };
     to.addEventListener('change', maj); maj();
     initCalendrier();
     const tp = document.getElementById('tpls');
@@ -1007,7 +1013,9 @@ function liaisonsConsignes() {
     f.addEventListener('submit', e => {
       e.preventDefault();
       const texte = document.getElementById('ctx').value.trim(); if (!texte) return;
-      consignes.push({ id: Date.now(), to: to.value, onglet: on.value || null, texte, echeance: document.getElementById('cech').value || null, urgent: document.getElementById('curg').checked, rep: document.getElementById('crep').checked, rappel: document.getElementById('cmail').checked, statut: 'envoyee' });
+      const qui = document.getElementById('cqui').value || null, base = Date.now();
+      const cibles = to.value === 'ops' ? OPS_DIRS : [to.value === 'it' && qui === 'Théo' ? 'theo' : to.value];   /* Théo a son propre compte */
+      cibles.forEach((r, i) => consignes.push({ id: base + i, to: r, qui, onglet: on.value || null, texte, echeance: document.getElementById('cech').value || null, urgent: document.getElementById('curg').checked, rep: document.getElementById('crep').checked, rappel: document.getElementById('cmail').checked, statut: 'envoyee' }));
       rafraichirConsignes();
     });
   }
