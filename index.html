@@ -1068,6 +1068,33 @@ function liaisonsReglages() {
   }));
 }
 
+/* ---------- Mon code : chaque profil change son propre code ---------- */
+function ouvrirMonCode() {
+  panneau = 'moncode';
+  ouvrirDrawer(`<span class="mono">${esc(ROLES[roleId].nom)}</span><h3>Mon code</h3>
+    <p class="dnote">Change le code qui t'ouvre cet espace. Il faut redonner ton code actuel. Le serveur n'en garde qu'une version brouillée : personne, pas même le superviseur, ne peut le lire.</p>
+    <form class="cform" id="moncodeform" autocomplete="off">
+      <label><span class="mono">Code actuel</span><input class="cs-note" type="password" id="mc-old" autocomplete="off" autocapitalize="characters" required></label>
+      <label><span class="mono">Nouveau code</span><input class="cs-note" type="password" id="mc-new" autocomplete="new-password" autocapitalize="characters" required></label>
+      <label><span class="mono">Nouveau code, encore une fois</span><input class="cs-note" type="password" id="mc-new2" autocomplete="new-password" autocapitalize="characters" required></label>
+      <p class="err" id="mc-msg"></p>
+      <button class="btn small" type="submit" id="mc-btn">Changer mon code</button>
+    </form>`);
+  document.getElementById('moncodeform').addEventListener('submit', async e => {
+    e.preventDefault();
+    const msg = document.getElementById('mc-msg'), bt = document.getElementById('mc-btn');
+    const ancien = document.getElementById('mc-old').value.trim(), n1 = document.getElementById('mc-new').value.trim(), n2 = document.getElementById('mc-new2').value.trim();
+    msg.style.color = '';
+    if (n1 !== n2) { msg.textContent = 'Les deux nouveaux codes ne sont pas identiques.'; return; }
+    bt.disabled = true;
+    const r = await appel({ a: 'moncode', ancien: ancien, nouveau: n1 });
+    bt.disabled = false;
+    if (!r.ok) { msg.textContent = r.reseau ? 'Impossible de joindre le serveur.' : (r.msg || 'Impossible de changer le code.'); return; }
+    ['mc-old', 'mc-new', 'mc-new2'].forEach(id => { document.getElementById(id).value = ''; });
+    msg.style.color = 'var(--live)'; msg.textContent = 'Code changé. Utilise-le à ta prochaine connexion.';
+  });
+}
+
 /* ---------- Didacticiel ---------- */
 let tourI = 0, tourEtapes = [];
 function tutoVu() { try { return localStorage.getItem('pilotage-tuto-' + roleId) === '1'; } catch (e) { return false; } }
@@ -1462,7 +1489,7 @@ function renderApp() {
   <div class="app${reunion ? ' reu' : ''}">
     <nav class="side" aria-label="Onglets">
       <div class="sidebody">
-      <div class="mark"><i></i><b class="${brandAnim ? 'typed' : ''}" aria-label="${esc(brand)}">${brandAnim ? lettres(brand, 55) : esc(brand)}</b><span class="mk-act"><button class="mkb" id="helpbtn" aria-label="Revoir le didacticiel" title="Revoir le didacticiel">?</button>${sup ? '<button class="mkb" id="regbtn" aria-label="Réglages" title="Réglages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>' : ''}</span></div>
+      <div class="mark"><i></i><b class="${brandAnim ? 'typed' : ''}" aria-label="${esc(brand)}">${brandAnim ? lettres(brand, 55) : esc(brand)}</b><span class="mk-act"><button class="mkb" id="codebtn" aria-label="Mon code" title="Mon code"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M14 9l2 2"/></svg></button><button class="mkb" id="helpbtn" aria-label="Revoir le didacticiel" title="Revoir le didacticiel">?</button>${sup ? '<button class="mkb" id="regbtn" aria-label="Réglages" title="Réglages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>' : ''}</span></div>
       <div class="who"><span class="mono">Connecté</span><strong>${esc(r.nom)}</strong></div>
       <div class="rail" role="group" aria-label="Pôles">${rail}</div>
       ${legende}
@@ -1552,6 +1579,7 @@ function renderApp() {
   document.getElementById('reubtn').addEventListener('click', lancerReunion);
   document.getElementById('reuquit').addEventListener('click', quitterReunion);
   document.getElementById('helpbtn').addEventListener('click', lancerTuto);
+  document.getElementById('codebtn').addEventListener('click', ouvrirMonCode);
   const ro = document.getElementById('resetordre'); if (ro) ro.addEventListener('click', () => { delete ordres[roleId + '|' + info.id]; sauver('pilotage-ordre', ordres); renderApp(); });
   root.querySelectorAll('[data-etat]').forEach(b => b.addEventListener('click', () => {
     const t = b.dataset.etat;
