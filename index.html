@@ -1721,6 +1721,14 @@ async function animLoginEffondrement(a, lm, M, message) {
   await tween(260, k => { err.style.opacity = k; groupe.style.opacity = 1 - k; });
 }
 
+/* Identifiant aléatoire de cet appareil : le serveur bloque les mauvais essais appareil par appareil, pas tout le monde à la fois. */
+function idAppareil() {
+  try {
+    let id = localStorage.getItem('pilotage-appareil');
+    if (!id) { id = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join(''); localStorage.setItem('pilotage-appareil', id); }
+    return id;
+  } catch (e) { return ''; }
+}
 function renderLogin(erreur) {
   document.documentElement.removeAttribute('data-resto');
   root.innerHTML = `
@@ -1744,7 +1752,7 @@ function renderLogin(erreur) {
     if (a) { animEnCours = true; animVit = 1; document.getElementById('err').textContent = ''; }
     const passer = () => { animVit = .25; };
     if (a) document.addEventListener('pointerdown', passer, { once: true });
-    const r = await appel({ a: 'login', code: v });
+    const r = await appel({ a: 'login', code: v, dev: idAppareil() });
     const msg = r.reseau ? 'Impossible de joindre le serveur. Réessaie dans un instant.' : (r.msg || 'Code refusé.');
     if (r.ok) {
       jeton = r.jeton; try { localStorage.setItem('pilotage-jeton', JSON.stringify({ jeton: r.jeton, exp: r.exp })); } catch (x) {}
