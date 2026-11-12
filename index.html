@@ -559,7 +559,7 @@ const PRIVES = ['franchise', 'rhadmin'];
 const ONGLETS_PRIVES = ['rhadmin'];
 const ROLES = {
   superviseur: { nom: 'Superviseur', onglets: TOUS.filter(t => !ONGLETS_PRIVES.includes(t)), resto: null },
-  franchise: { nom: 'Franchisé', onglets: TOUS, resto: null },
+  franchise: { nom: 'Franchisé', onglets: TOUS.filter(t => !['alice', 'emilie-theo', 'madison'].includes(t)), resto: null },
   rhadmin: { nom: 'RH administratif', onglets: ['rhadmin'], resto: null },
   dir905: { nom: 'Directeur Rognac', resto: '905', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'bilans'] },
   dir525: { nom: 'Directeur Craux', resto: '525', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'bilans'] },
