@@ -20,7 +20,7 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin === location.origin) {
-    e.respondWith(fetch(req).then(res => {
+    e.respondWith(fetch(req, { cache: 'no-cache' }).then(res => {
       if (res && res.ok) { const copie = res.clone(); caches.open(COQUE).then(c => c.put(req, copie)); }
       return res;
     }).catch(() => caches.match(req, { ignoreSearch: true }).then(r => r || (req.mode === 'navigate' ? caches.match('index.html') : Response.error()))));
