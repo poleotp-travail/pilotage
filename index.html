@@ -556,6 +556,7 @@ let roleId = null, scope = 'tous', presence = {}, lastKey = null, lastBrand = nu
 const SERVEUR = 'https://script.google.com/macros/s/AKfycbwpt09b3QU-jszkK0UqQ3vjewwLNocu8yBoYKxNz2kwFN5T9fjN_n75IWoCVmcdtEHg/exec';
 const CLES_PARTAGEES = ['pilotage-consignes', 'pilotage-notes', 'pilotage-com', 'pilotage-obj', 'pilotage-ordre', 'pilotage-poles', 'pilotage-mod'];
 let jeton = null, regInfos = [], pollTimer = null, fileEnvoi = Promise.resolve();
+let horsLigne = false, derniereSync = 0, echecEnvoi = false;
 let SERV = { consignes: [], notes: {}, com: {}, obj: {}, ordre: {}, poles: {}, mod: [] };
 const clone = x => JSON.parse(JSON.stringify(x === undefined ? null : x));
 function charger(k, def) { return def; }
@@ -575,11 +576,13 @@ function majBadgeApp() {
   try { caches.open('pilotage-badge').then(c => c.put('n', new Response(String(n)))); } catch (e) {}
 }
 function partage() { return JSON.stringify([consignes, notes, commentaires, objectifs, ordres, ordresPoles[roleId], modeles, presence, regInfos]); }
-function appliquerEtat(e) {
+function appliquerEtat(e, copie) {
   consignes = e.consignes || []; notes = e.notes || {}; commentaires = e.com || {}; objectifs = e.obj || {};
   ordres = e.ordre || {}; if (e.poles) ordresPoles[roleId] = e.poles; else delete ordresPoles[roleId];
   if (e.mod) modeles = e.mod;
   presence = e.presence || {}; if (e.reg) regInfos = e.reg;
+  derniereSync = copie ? copie.t : Date.now();
+  if (!copie) { try { localStorage.setItem('pilotage-etat', JSON.stringify({ role: roleId, e: e, t: derniereSync })); } catch (x) {} }
   majBadgeApp();
   SERV = { consignes: clone(consignes), notes: clone(notes), com: clone(commentaires), obj: clone(objectifs), ordre: clone(ordres), poles: { [roleId]: clone(ordresPoles[roleId]) }, mod: clone(modeles) };
 }
@@ -623,14 +626,19 @@ function diffOps(k, v) {
 function envoyerDiff(k, v) {
   const ops = diffOps(k, v);
   if (!ops.length) return;
-  fileEnvoi = fileEnvoi.then(async () => { for (const p of ops) await appel(p); await rafraichirEtat(); });
+  fileEnvoi = fileEnvoi.then(async () => {
+    for (const p of ops) { const r = await appel(p); if (r && r.reseau) { horsLigne = true; echecEnvoi = true; if (roleId) renderApp(); return; } }
+    await rafraichirEtat();
+  });
 }
 async function rafraichirEtat() {
   if (!roleId) return;
   const e = await appel({ a: 'etat', tab: courant() });
+  if (e && e.reseau) { if (!horsLigne) { horsLigne = true; if (roleId) renderApp(); } return; }
   if (!e || !e.ok || !roleId) return;
+  const etaitHors = horsLigne; horsLigne = false; echecEnvoi = false;
   const avant = partage(); appliquerEtat(e);
-  if (avant === partage() || document.getElementById('tour') || document.body.classList.contains('glisse')) return;
+  if ((avant === partage() && !etaitHors) || document.getElementById('tour') || document.body.classList.contains('glisse')) return;
   renderApp();
   if (panneau === 'consignes' && !(document.activeElement && document.activeElement.closest && document.activeElement.closest('#dbody'))) { document.getElementById('dbody').innerHTML = htmlConsignes(); liaisonsConsignes(); }
 }
@@ -638,6 +646,8 @@ function demarrerPoll() {
   clearInterval(pollTimer);
   pollTimer = setInterval(() => { if (document.visibilityState === 'visible' && roleId) rafraichirEtat(); }, 20000);
 }
+addEventListener('offline', () => { if (roleId && !horsLigne) { horsLigne = true; renderApp(); } });
+addEventListener('online', () => { if (roleId) rafraichirEtat(); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && roleId) rafraichirEtat(); });
 let notes = charger('pilotage-notes', {}), ordres = charger('pilotage-ordre', {}), ordresPoles = charger('pilotage-poles', {});
 let objectifs = charger('pilotage-obj', {}), commentaires = charger('pilotage-com', {});
@@ -1357,7 +1367,8 @@ function sortir() {
   if (reunion) { reunion = false; clearInterval(reuTimer); clearInterval(clockTimer); try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {} }
   roleId = null; jeton = null; lastKey = null; lastBrand = null;
   consignes = []; notes = {}; commentaires = {}; objectifs = {}; ordres = {}; ordresPoles = {}; presence = {}; regInfos = [];
-  try { localStorage.removeItem('pilotage-jeton'); } catch (e) {}
+  try { localStorage.removeItem('pilotage-jeton'); localStorage.removeItem('pilotage-etat'); } catch (e) {}
+  horsLigne = false; echecEnvoi = false;
   try { if (navigator.clearAppBadge) navigator.clearAppBadge(); caches.open('pilotage-badge').then(c => c.put('n', new Response('0'))); } catch (e) {}
   history.replaceState(null, '', location.pathname);
   render();
@@ -1367,6 +1378,12 @@ async function restaurerSession() {
   if (!st || !st.jeton || st.exp < Date.now()) return false;
   jeton = st.jeton;
   const e = await appel({ a: 'etat', tab: '' });
+  if (e && e.reseau) {
+    let c = null; try { c = JSON.parse(localStorage.getItem('pilotage-etat') || 'null'); } catch (x) {}
+    if (!c || !c.e || !ROLES[c.role]) { jeton = null; return false; }
+    roleId = c.role; appliquerEtat(c.e, c); horsLigne = true; armerInactivite(); demarrerPoll();
+    return true;
+  }
   if (!e || !e.ok) { jeton = null; return false; }
   roleId = e.role; appliquerEtat(e); armerInactivite(); demarrerPoll();
   return true;
@@ -1455,7 +1472,7 @@ function renderApp() {
     </nav>
     <main class="main${anim ? ' enter' : ''}">
       <div class="reubar"><b>${esc(brand)}</b><span class="mono" id="clock"></span><div class="prog"><i></i></div><button class="hbtn" id="reuquit">Quitter</button></div>
-      ${etatsSim.off ? '<div class="offline" role="alert"><i></i>Impossible de joindre les données. Dernière version affichée.</div>' : ''}
+      ${horsLigne ? `<div class="offline" role="alert"><i></i>Hors connexion${echecEnvoi ? ' : ta dernière modification n\'est pas enregistrée' : ''}. Dernière version du ${new Date(derniereSync).toLocaleString('fr-FR', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', ' à')}.</div>` : etatsSim.off ? '<div class="offline" role="alert"><i></i>Impossible de joindre les données. Dernière version affichée.</div>' : ''}
       <header class="head">
         <div><span class="mono">${esc(groupe.nom)} · ${esc(info.resp)}</span><h2 class="${anim ? 'typed' : ''}" aria-label="${esc(info.nom)}">${anim ? lettres(info.nom, 28) : esc(info.nom)}</h2>${jourRef ? `<span class="mono vue">Chiffres au ${esc(fmtDate(jourRef))} · <button class="cs-link" id="retourauj">revenir à aujourd'hui</button></span>` : ''}<span class="mono pr">${esc(brand)} · ${esc(libelleScope)} · imprimé le ${new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</span></div>
         <div class="hright">
