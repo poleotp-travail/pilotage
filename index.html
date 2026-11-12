@@ -308,7 +308,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .evt { border-left: 3px solid var(--e); }
 .pr { display: none; }
 .footwrap .foot { display: grid; grid-template-columns: 1fr 1fr; }
-.footwrap #printbtn { grid-column: 1 / -1; }
+.footwrap #printbtn, .footwrap #notifbtn { grid-column: 1 / -1; }
 
 @media print {
   :root, :root[data-theme="dark"], :root:not([data-theme="light"]) { --bg: #fff; --panel: #fff; --panel-2: #f1f3f6; --line: #c9d0db; --fg: #111; --muted: #555; --grid: transparent; --halo: transparent; }
@@ -1153,6 +1153,34 @@ let noClickRail = 0;
   }
 })();
 
+/* ---------- Notifications (Web Push) : le téléphone envoie son abonnement au serveur Apps Script ---------- */
+const PUSH_CLE_PUBLIQUE = 'BA48yWbPJknHUSfBdL_sNAPK0lw44OGsdDDxyjyYfu_q9M2u37J2YBFBy8G7TNugOwrDScgMHkEgktaBcQLWT2E';
+const PUSH_SERVEUR = 'https://script.google.com/macros/s/AKfycbwpt09b3QU-jszkK0UqQ3vjewwLNocu8yBoYKxNz2kwFN5T9fjN_n75IWoCVmcdtEHg/exec';
+let etatNotif = '';
+function surIphone() { return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+function installee() { return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; }
+function notifLabel() {
+  if (etatNotif) return etatNotif;
+  if (!('Notification' in window) || !('serviceWorker' in navigator)) return surIphone() && !installee() ? 'Notifications : installe d\'abord l\'app' : 'Notifications indisponibles';
+  if (Notification.permission === 'granted') return 'Notifications : activées';
+  if (Notification.permission === 'denied') return 'Notifications refusées';
+  return 'Activer les notifications';
+}
+function cleEnOctets(b64) { const p = '='.repeat((4 - b64.length % 4) % 4), r = atob((b64 + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from([...r].map(c => c.charCodeAt(0))); }
+async function activerNotifs() {
+  const b = document.getElementById('notifbtn'), dire = t => { etatNotif = t; if (b) b.textContent = t; };
+  try {
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) { dire(surIphone() && !installee() ? 'Ajoute d\'abord à l\'écran d\'accueil' : 'Notifications indisponibles'); return; }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { dire('Notifications refusées'); return; }
+    const reg = await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: cleEnOctets(PUSH_CLE_PUBLIQUE) });
+    const abo = btoa(JSON.stringify(sub.toJSON())).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    await fetch(PUSH_SERVEUR + '?app=abonner&role=' + encodeURIComponent(roleId || '') + '&abo=' + abo, { mode: 'no-cors' });
+    dire('Notifications : activées');
+  } catch (e) { dire('Échec de l\'activation'); }
+}
+
 /* ---------- Mode réunion ---------- */
 let reunion = false, reuTimer = null, clockTimer = null;
 function majHorloge() { const c = document.getElementById('clock'); if (c) c.textContent = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) + ' · ' + new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }); }
@@ -1304,7 +1332,7 @@ function renderApp() {
       <div class="rail" role="group" aria-label="Pôles">${rail}</div>
       ${legende}
       <div class="pps">${nav}</div>
-      <div class="footwrap"><button class="out" id="out">Changer de code</button><div class="foot"><button class="themebtn" id="reubtn">Mode réunion</button><button class="themebtn" id="themebtn">${THEMES[theme]}</button><button class="themebtn" id="printbtn">Version imprimable</button></div></div>
+      <div class="footwrap"><button class="out" id="out">Changer de code</button><div class="foot"><button class="themebtn" id="reubtn">Mode réunion</button><button class="themebtn" id="themebtn">${THEMES[theme]}</button><button class="themebtn" id="printbtn">Version imprimable</button><button class="themebtn" id="notifbtn">${notifLabel()}</button></div></div>
       </div>
     </nav>
     <main class="main${anim ? ' enter' : ''}">
@@ -1399,6 +1427,7 @@ function renderApp() {
     renderApp();
   }));
   const rg = document.getElementById('regbtn'); if (rg) rg.addEventListener('click', ouvrirReglages);
+  document.getElementById('notifbtn').addEventListener('click', activerNotifs);
   document.getElementById('printbtn').addEventListener('click', () => { try { window.print(); } catch (e) {} });
   root.querySelectorAll('[data-jour]').forEach(b => b.addEventListener('click', () => ouvrirJour(b.dataset.jour)));
   if (reunion) majHorloge();
