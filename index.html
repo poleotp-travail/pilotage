@@ -70,6 +70,18 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* Cockpit */
 .app { display: grid; grid-template-columns: 276px minmax(0, 1fr); gap: 20px; max-width: 1280px; margin: 0 auto; }
 .side { position: sticky; top: 20px; align-self: start; max-height: calc(100vh - 40px); overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 24px; padding: 22px 14px 16px; display: grid; gap: 18px; }
+/* Écran peu haut : on resserre le panneau plutôt que de le faire défiler ; s'il ne tient vraiment pas, il suit la page (pas de défilement interne). */
+.side.haute { position: static; max-height: none; overflow: visible; }
+@media (min-width: 701px) and (max-height: 900px) {
+  .side { padding: 16px 12px 12px; gap: 10px; }
+  .sidebody { gap: 10px; }
+  .tab { padding: 7px 12px; }
+  .rb { width: 36px; height: 36px; }
+  .rail.dense { gap: 8px 6px; }
+  .footwrap { gap: 6px; }
+  .themebtn { padding: 7px 8px; }
+  .out { padding: 7px; }
+}
 .side .mark { padding: 0 8px; }
 .who { margin: 0 8px; padding: 10px 12px; background: var(--panel-2); border-radius: 16px; display: grid; gap: 2px; }
 .who strong { font-weight: 500; font-size: 14px; }
@@ -1453,6 +1465,13 @@ function renderLogin(erreur) {
   });
 }
 
+/* Le panneau de gauche ne défile jamais en interne : s'il est plus haut que l'écran, il suit la page. */
+function ajusterSide() {
+  const s = document.querySelector('.side'); if (!s) return;
+  s.classList.remove('haute');
+  if (matchMedia('(min-width: 701px)').matches && s.scrollHeight > innerHeight - 40) s.classList.add('haute');
+}
+addEventListener('resize', () => { if (roleId) ajusterSide(); });
 function renderApp() {
   const r = ROLES[roleId], cur = courant();
   const key = roleId + '|' + cur + '|' + scope;
@@ -1544,6 +1563,7 @@ function renderApp() {
       ${sup ? `<span class="pillcount">${nbSup}</span>` : (nbOuv ? `<span class="bd rf">${nbOuv}</span>` : '')}
     </button>
   </div>`;
+  ajusterSide();
   root.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { location.hash = b.dataset.tab; }));
   root.querySelectorAll('[data-scope]').forEach(b => b.addEventListener('click', () => { scope = b.dataset.scope; renderApp(); }));
   root.querySelectorAll('.rb').forEach(b => b.addEventListener('click', () => {
