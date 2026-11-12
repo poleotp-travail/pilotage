@@ -568,12 +568,19 @@ async function appel(params) {
   if (j && j.expire) { msgLogin = 'Session expirée. Reconnecte-toi.'; if (roleId) sortir(); }
   return j || { ok: false };
 }
+/* Chiffre rouge sur l'icône de l'app : nombre de consignes à traiter (rien pour le superviseur). */
+function majBadgeApp() {
+  const n = roleId && roleId !== 'superviseur' ? ouvertes(roleId).length : 0;
+  try { if (navigator.setAppBadge) { if (n > 0) navigator.setAppBadge(n); else navigator.clearAppBadge(); } } catch (e) {}
+  try { caches.open('pilotage-badge').then(c => c.put('n', new Response(String(n)))); } catch (e) {}
+}
 function partage() { return JSON.stringify([consignes, notes, commentaires, objectifs, ordres, ordresPoles[roleId], modeles, presence, regInfos]); }
 function appliquerEtat(e) {
   consignes = e.consignes || []; notes = e.notes || {}; commentaires = e.com || {}; objectifs = e.obj || {};
   ordres = e.ordre || {}; if (e.poles) ordresPoles[roleId] = e.poles; else delete ordresPoles[roleId];
   if (e.mod) modeles = e.mod;
   presence = e.presence || {}; if (e.reg) regInfos = e.reg;
+  majBadgeApp();
   SERV = { consignes: clone(consignes), notes: clone(notes), com: clone(commentaires), obj: clone(objectifs), ordre: clone(ordres), poles: { [roleId]: clone(ordresPoles[roleId]) }, mod: clone(modeles) };
 }
 /* Chaque modification locale est comparée à la dernière version du serveur, puis envoyée sous forme d'opérations simples. */
@@ -1351,6 +1358,7 @@ function sortir() {
   roleId = null; jeton = null; lastKey = null; lastBrand = null;
   consignes = []; notes = {}; commentaires = {}; objectifs = {}; ordres = {}; ordresPoles = {}; presence = {}; regInfos = [];
   try { localStorage.removeItem('pilotage-jeton'); } catch (e) {}
+  try { if (navigator.clearAppBadge) navigator.clearAppBadge(); caches.open('pilotage-badge').then(c => c.put('n', new Response('0'))); } catch (e) {}
   history.replaceState(null, '', location.pathname);
   render();
 }
