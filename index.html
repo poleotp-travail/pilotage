@@ -593,10 +593,11 @@ const ROLES = {
   dir649: { nom: 'Directeur Cognets', resto: '649', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'bilans'] },
   formation: { nom: 'Formation', resto: null, onglets: ['formation'] },
   it: { nom: 'IT et maintenance', resto: null, onglets: ['maintenance', 'pep', 'services', 'it', 'robots'] },
-  rh: { nom: 'RH opérationnel', resto: null, onglets: ['turnover', 'atterrissage', 'personnel'] }
+  rh: { nom: 'RH opérationnel', resto: null, onglets: ['turnover', 'atterrissage', 'personnel'] },
+  theo: { nom: 'Théo', resto: null, onglets: ['maintenance', 'pep', 'services', 'it', 'robots'] }
 };
 /* Quel onglet « Équipe » correspond à quel code. */
-const PERSONNE = { rh: 'alice', it: ['emilie', 'theo'], formation: 'madison' };
+const PERSONNE = { rh: 'alice', it: 'emilie', theo: 'theo', formation: 'madison' };
 /* Profils qui pilotent (consignes, objectifs, codes) : superviseur et franchisé. */
 function estSup() { return roleId === 'superviseur' || roleId === 'franchise'; }
 /* Qui je vois : le franchisé voit tout ; le superviseur ne voit ni le franchisé ni le RH administratif. */
