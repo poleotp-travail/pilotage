@@ -479,6 +479,21 @@ body.glisse, body.glisse * { cursor: grabbing !important; user-select: none; }
 .rb.coin { animation: coin .95s cubic-bezier(.3,.7,.3,1) both; }
 @keyframes coin { from { transform: rotateY(0deg); } to { transform: rotateY(720deg); } }
 @media (prefers-reduced-motion: reduce) { .rb.coin { animation: none; } }
+/* Balayage du détail d'une case (téléphone) */
+.pos { display: none; }
+@media (max-width: 700px) {
+  #dbody .pos { display: flex; align-items: center; gap: 6px; }
+  .pos i { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
+  .pos i.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .pos span { margin-left: 6px; }
+}
+@keyframes glisseD { from { opacity: 0; transform: translateX(-46px); } }
+@keyframes glisseG { from { opacity: 0; transform: translateX(46px); } }
+@keyframes rebond2 { 30% { transform: translateX(10px); } 60% { transform: translateX(-6px); } }
+#dbody.gd { animation: glisseD .32s cubic-bezier(.2, .8, .2, 1); }
+#dbody.gg { animation: glisseG .32s cubic-bezier(.2, .8, .2, 1); }
+#dbody.rb2 { animation: rebond2 .28s ease; }
+@media (prefers-reduced-motion: reduce) { #dbody.gd, #dbody.gg, #dbody.rb2 { animation: none; } }
 </style>
 </head><body>
 
@@ -728,13 +743,13 @@ function ouvrirDrawer(html) {
 function libelleScopeGlobal() { const r = ROLES[roleId]; return r.resto ? RESTOS[r.resto] : (scope === 'tous' ? 'Les 3 restaurants' : RESTOS[scope]); }
 function htmlModule(nom, tabId) {
   const info = GROUPES.flatMap(g => g.onglets).find(o => o.id === tabId), groupe = GROUPES.find(g => g.onglets.some(o => o.id === tabId));
-  if (etatsSim.manque[cle(tabId, nom)]) return `<span class="mono">${esc(groupe.nom)} · ${esc(info.nom)}</span><h3>${esc(nom)}</h3><span class="mono">${esc(libelleScopeGlobal())}</span><div class="hatch"></div><div class="nd-lab"><i></i>Donnée non reçue</div><p class="dnote">Le robot n'a rien déposé pour cette case. Au lieu d'un chiffre trompeur, rien n'est affiché. Dès que la donnée arrive, la case reprend son aspect normal.</p>`;
+  if (etatsSim.manque[cle(tabId, nom)]) return `${posHtml(info, nom)}<span class="mono">${esc(groupe.nom)} · ${esc(info.nom)}</span><h3>${esc(nom)}</h3><span class="mono">${esc(libelleScopeGlobal())}</span><div class="hatch"></div><div class="nd-lab"><i></i>Donnée non reçue</div><p class="dnote">Le robot n'a rien déposé pour cette case. Au lieu d'un chiffre trompeur, rien n'est affiché. Dès que la donnée arrive, la case reprend son aspect normal.</p>`;
   const e = exemple(nom, tabId), o = objectifDe(tabId, nom, e), st = statutObj(e.v, o), k = cle(tabId, nom), fils = commentaires[k] || [];
   const sup = roleId === 'superviseur';
   const pct = Math.max(4, Math.min(100, Math.round((o.sens === 'bas' ? o.obj / e.v : e.v / o.obj) * 100)));
   const al = alertesCases(tabId, info.prevu.length)[Math.max(0, info.prevu.indexOf(nom))] || {};
   const tagsAl = (al.robot ? `<span class="tag rv">${al.robot} robot${al.robot > 1 ? 's' : ''} en erreur</span>` : '') + (al.auto ? `<span class="tag rf">Sous l'objectif depuis ${al.auto} semaines · alerte automatique</span>` : (al.alerte ? '<span class="tag rf">Alerte à traiter</span>' : ''));
-  return `<span class="mono">${esc(groupe.nom)} · ${esc(info.nom)}</span><h3>${esc(nom)}</h3><span class="mono">${esc(libelleScopeGlobal())} · ${e.fraicheur}</span>${tagsAl ? `<div class="tags">${tagsAl}</div>` : ''}
+  return `${posHtml(info, nom)}<span class="mono">${esc(groupe.nom)} · ${esc(info.nom)}</span><h3>${esc(nom)}</h3><span class="mono">${esc(libelleScopeGlobal())} · ${e.fraicheur}</span>${tagsAl ? `<div class="tags">${tagsAl}</div>` : ''}
     <div class="dbig"><b>${e.val}</b><span class="delta ${e.up ? 'up' : 'down'}">${e.up ? '▲' : '▼'} ${e.delta} <small>${libComp()}</small></span></div>
     ${spark(e.serie, true, reperesDe(tabId, nom, e.serie.length))}
     <div class="obj ${st}"><div class="bar"><i style="width:${pct}%"></i></div><span>Objectif ${fmtNum(o.obj)} (${o.sens === 'bas' ? 'le plus bas possible' : 'le plus haut possible'}) · <b>${LIBST[st]}</b></span></div>
@@ -748,6 +763,39 @@ function htmlModule(nom, tabId) {
     <div class="thread">${fils.length ? fils.map(m => `<div class="msg${m.de === roleId ? ' moi' : ''}"><span class="mono">${esc(ROLES[m.de].nom)} · ${depuis(m.t)}</span><p>${esc(m.texte)}</p></div>`).join('') : '<p class="empty">Aucun message sur ce chiffre.</p>'}</div>
     <form class="cmt" id="cmt"><input id="cmtx" placeholder="Écrire un message" aria-label="Message" autocomplete="off"><button class="btn small" type="submit">Envoyer</button></form>`;
 }
+/* ---------- Téléphone : balayer le détail d'une case pour passer à la suivante ---------- */
+function posHtml(info, nom) {
+  const lst = ordreCases(info), i = lst.indexOf(nom);
+  if (lst.length < 2 || i < 0) return '';
+  return '<div class="pos mono" aria-hidden="true">' + lst.map((x, j) => '<i class="' + (j === i ? 'on' : '') + '"></i>').join('') + '<span>' + (i + 1) + ' / ' + lst.length + '</span></div>';
+}
+function animerCorps(classe) {
+  const c = document.getElementById('dbody'); c.classList.remove('gd', 'gg', 'rb2'); void c.offsetWidth; c.classList.add(classe);
+  setTimeout(() => c.classList.remove(classe), 400);
+}
+function passerCase(sens) {
+  if (!panneau || !panneau.tabId) return;
+  const lst = ordreCases(infoTab(panneau.tabId)), i = lst.indexOf(panneau.nom), j = i + sens;
+  if (i < 0 || j < 0 || j >= lst.length) { animerCorps('rb2'); return; }
+  ouvrirModule(lst[j], panneau.tabId); animerCorps(sens > 0 ? 'gd' : 'gg');
+}
+(function () {
+  let dep = null; const d = document.getElementById('drawer');
+  d.addEventListener('touchstart', e => {
+    dep = null;
+    if (!panneau || !panneau.tabId || !matchMedia('(max-width: 700px)').matches) return;
+    const t = e.touches[0];
+    if (t.clientX < 24 || (e.target.closest && e.target.closest('input, textarea, select'))) return;
+    dep = { x: t.clientX, y: t.clientY, t: Date.now() };
+  }, { passive: true });
+  d.addEventListener('touchend', e => {
+    if (!dep) return;
+    const t = e.changedTouches[0], dx = t.clientX - dep.x, dy = t.clientY - dep.y, vite = Date.now() - dep.t < 800; dep = null;
+    if (!vite || Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
+    passerCase(dx > 0 ? 1 : -1);
+  }, { passive: true });
+})();
+
 function ouvrirModule(nom, tabId) {
   panneau = { nom, tabId };
   ouvrirDrawer(htmlModule(nom, tabId)); liaisonsModule();
@@ -1024,7 +1072,7 @@ function lancerTuto() {
     { sel: '.rail', titre: 'Les ronds', texte: 'Chaque rond est un pôle. Clique sur l\'un d\'eux pour voir ses onglets juste en dessous. Reste appuyé dessus : il tourne comme une pièce et tu peux le déplacer.' },
     { sel: '.pps', titre: 'Les onglets', texte: 'Ici, les onglets du pôle choisi. Un clic ouvre la page.' },
     { sel: null, titre: 'Les petits points', texte: 'Ils apparaissent sur les ronds et sur les onglets, seulement quand il y a quelque chose à voir.', visuel: '<div class="demo"><div><span class="ic"><i class="dot live"></i></span>Une personne est connectée</div><div><span class="ic"><span class="bds"><span class="bd rv" style="animation:beat2 3s ease-out infinite"></span></span></span>Un robot est en erreur : un battement par erreur</div><div><span class="ic"><span class="bds"><span class="bd rf"></span></span></span>Une alerte à regarder en priorité</div></div>' },
-    { sel: '.mod', titre: 'Les cases', texte: 'Clique sur une case pour voir le détail : la courbe, l\'objectif, le fichier source, et pour écrire un message.' },
+    { sel: '.mod', titre: 'Les cases', texte: 'Clique sur une case pour voir le détail : la courbe, l\'objectif, le fichier source, et pour écrire un message. Sur téléphone, balaie vers la droite pour passer à la case suivante.' },
     { sel: '.mod', titre: 'Réorganiser', texte: 'Reste appuyé sur une case : elle se décroche et suit ta souris ou ton doigt. Dépose-la où tu veux, ton ordre est gardé.' },
     { sel: '#consbtn', titre: 'Les consignes', texte: sup ? 'Ici, tu envoies des consignes à l\'équipe et tu suis où elles en sont.' : 'Ici, les consignes qu\'on te confie. Coche « Fait » quand c\'est terminé.' },
     { sel: '.frise', titre: 'Les prochains jours', texte: 'Les échéances des 4 semaines à venir. Clique sur un jour pour voir le détail.' }
