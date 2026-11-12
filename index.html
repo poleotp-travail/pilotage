@@ -530,13 +530,13 @@ const GROUPES = [
 const TOUS = GROUPES.flatMap(g => g.onglets.map(o => o.id));
 const NOMS = Object.fromEntries(GROUPES.flatMap(g => g.onglets.map(o => [o.id, o.nom])));
 const ROLES = {
-  superviseur: { nom: 'Superviseur', code: 'SUPERVISEUR', onglets: TOUS, resto: null },
-  dir905: { nom: 'Directeur Rognac', code: 'DIR-905', resto: '905', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'bilans'] },
-  dir525: { nom: 'Directeur Craux', code: 'DIR-525', resto: '525', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'bilans'] },
-  dir649: { nom: 'Directeur Cognets', code: 'DIR-649', resto: '649', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'bilans'] },
-  formation: { nom: 'Formation', code: 'FORMATION', resto: null, onglets: ['formation'] },
-  it: { nom: 'IT et maintenance', code: 'IT', resto: null, onglets: ['maintenance', 'pep', 'services', 'it', 'robots'] },
-  rh: { nom: 'RH opérationnel', code: 'RH', resto: null, onglets: ['turnover', 'atterrissage', 'personnel'] }
+  superviseur: { nom: 'Superviseur', onglets: TOUS, resto: null },
+  dir905: { nom: 'Directeur Rognac', resto: '905', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'bilans'] },
+  dir525: { nom: 'Directeur Craux', resto: '525', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'bilans'] },
+  dir649: { nom: 'Directeur Cognets', resto: '649', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'bilans'] },
+  formation: { nom: 'Formation', resto: null, onglets: ['formation'] },
+  it: { nom: 'IT et maintenance', resto: null, onglets: ['maintenance', 'pep', 'services', 'it', 'robots'] },
+  rh: { nom: 'RH opérationnel', resto: null, onglets: ['turnover', 'atterrissage', 'personnel'] }
 };
 /* Quel onglet « Équipe » correspond à quel code. */
 const PERSONNE = { rh: 'alice', it: 'emilie-theo', formation: 'madison' };
@@ -544,16 +544,91 @@ const AUTRES = Object.keys(ROLES).filter(k => k !== 'superviseur');
 
 const root = document.getElementById('root');
 let roleId = null, scope = 'tous', presence = {}, lastKey = null, lastBrand = null, ouvert = null, panneau = null, comparer = 'prev', periode = 'sem', jourRef = null;
-function charger(k, def) { try { const b = sessionStorage.getItem(k); if (b) return JSON.parse(b); } catch (e) {} return def; }
-function sauver(k, v) { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+/* ---------- Réseau : l'état partagé (consignes, messages, objectifs, ordres, codes) vit sur le serveur Apps Script ---------- */
+const SERVEUR = 'https://script.google.com/macros/s/AKfycbwpt09b3QU-jszkK0UqQ3vjewwLNocu8yBoYKxNz2kwFN5T9fjN_n75IWoCVmcdtEHg/exec';
+const CLES_PARTAGEES = ['pilotage-consignes', 'pilotage-notes', 'pilotage-com', 'pilotage-obj', 'pilotage-ordre', 'pilotage-poles', 'pilotage-mod'];
+let jeton = null, regInfos = [], pollTimer = null, fileEnvoi = Promise.resolve();
+let SERV = { consignes: [], notes: {}, com: {}, obj: {}, ordre: {}, poles: {}, mod: [] };
+const clone = x => JSON.parse(JSON.stringify(x === undefined ? null : x));
+function charger(k, def) { return def; }
+function sauver(k, v) { if (CLES_PARTAGEES.indexOf(k) >= 0) envoyerDiff(k, v); }
+function b64(o) { return btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+async function appel(params) {
+  const q = new URLSearchParams(Object.assign({ app: 'pil' }, params, jeton ? { t: jeton } : {}));
+  let j;
+  try { j = await (await fetch(SERVEUR + '?' + q)).json(); } catch (e) { return { ok: false, reseau: true }; }
+  if (j && j.expire) { msgLogin = 'Session expirée. Reconnecte-toi.'; if (roleId) sortir(); }
+  return j || { ok: false };
+}
+function partage() { return JSON.stringify([consignes, notes, commentaires, objectifs, ordres, ordresPoles[roleId], modeles, presence, regInfos]); }
+function appliquerEtat(e) {
+  consignes = e.consignes || []; notes = e.notes || {}; commentaires = e.com || {}; objectifs = e.obj || {};
+  ordres = e.ordre || {}; if (e.poles) ordresPoles[roleId] = e.poles; else delete ordresPoles[roleId];
+  if (e.mod) modeles = e.mod;
+  presence = e.presence || {}; if (e.reg) regInfos = e.reg;
+  SERV = { consignes: clone(consignes), notes: clone(notes), com: clone(commentaires), obj: clone(objectifs), ordre: clone(ordres), poles: { [roleId]: clone(ordresPoles[roleId]) }, mod: clone(modeles) };
+}
+/* Chaque modification locale est comparée à la dernière version du serveur, puis envoyée sous forme d'opérations simples. */
+function diffOps(k, v) {
+  const ops = [], egal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  if (k === 'pilotage-consignes') {
+    const ancien = SERV.consignes;
+    v.forEach(c => {
+      const a = ancien.find(x => x.id === c.id);
+      if (!a) ops.push({ a: 'cadd', d: b64(c) });
+      else if (a.statut !== c.statut || (a.note || '') !== (c.note || '') || !!a.suivie !== !!c.suivie) ops.push({ a: 'cmaj', id: c.id, statut: c.statut, note: c.note || '', suivie: c.suivie ? '1' : '0' });
+    });
+    ancien.forEach(a => { if (!v.some(c => c.id === a.id)) ops.push({ a: 'cdel', id: a.id }); });
+    SERV.consignes = clone(v);
+  } else if (k === 'pilotage-notes' || k === 'pilotage-com') {
+    const nom = k === 'pilotage-com' ? 'com' : 'notes', ancien = SERV[nom];
+    Object.keys(Object.assign({}, ancien, v)).forEach(c => {
+      const av = ancien[c] || [], nv = v[c] || [];
+      nv.forEach(x => { if (!av.some(y => y.t === x.t)) ops.push({ a: 'nadd', k: nom, ck: c, d: b64(x) }); });
+      av.forEach(y => { if (!nv.some(x => x.t === y.t)) ops.push({ a: 'ndel', k: nom, ck: c, n: y.t }); });
+    });
+    SERV[nom] = clone(v);
+  } else if (k === 'pilotage-obj') {
+    Object.keys(v).forEach(c => { if (!egal(v[c], SERV.obj[c])) ops.push({ a: 'obj', ck: c, d: b64(v[c]) }); });
+    SERV.obj = clone(v);
+  } else if (k === 'pilotage-ordre') {
+    const ancien = SERV.ordre;
+    Object.keys(Object.assign({}, ancien, v)).forEach(c => { if (!egal(v[c], ancien[c])) ops.push({ a: 'ordre', k: 'ordre', ck: c, d: b64(v[c] || []) }); });
+    SERV.ordre = clone(v);
+  } else if (k === 'pilotage-poles') {
+    const mien = v[roleId];
+    if (!egal(mien, SERV.poles[roleId])) ops.push({ a: 'ordre', k: 'poles', ck: roleId, d: b64(mien || []) });
+    SERV.poles = { [roleId]: clone(mien) };
+  } else if (k === 'pilotage-mod') {
+    if (!egal(v, SERV.mod)) ops.push({ a: 'mod', d: b64(v) });
+    SERV.mod = clone(v);
+  }
+  return ops;
+}
+function envoyerDiff(k, v) {
+  const ops = diffOps(k, v);
+  if (!ops.length) return;
+  fileEnvoi = fileEnvoi.then(async () => { for (const p of ops) await appel(p); await rafraichirEtat(); });
+}
+async function rafraichirEtat() {
+  if (!roleId) return;
+  const e = await appel({ a: 'etat', tab: courant() });
+  if (!e || !e.ok || !roleId) return;
+  const avant = partage(); appliquerEtat(e);
+  if (avant === partage() || document.getElementById('tour') || document.body.classList.contains('glisse')) return;
+  renderApp();
+  if (panneau === 'consignes' && !(document.activeElement && document.activeElement.closest && document.activeElement.closest('#dbody'))) { document.getElementById('dbody').innerHTML = htmlConsignes(); liaisonsConsignes(); }
+}
+function demarrerPoll() {
+  clearInterval(pollTimer);
+  pollTimer = setInterval(() => { if (document.visibilityState === 'visible' && roleId) rafraichirEtat(); }, 20000);
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && roleId) rafraichirEtat(); });
 let notes = charger('pilotage-notes', {}), ordres = charger('pilotage-ordre', {}), ordresPoles = charger('pilotage-poles', {});
 let objectifs = charger('pilotage-obj', {}), commentaires = charger('pilotage-com', {});
-/* Codes modifiables par le superviseur (aperçu : gardés dans ce navigateur), dernière connexion, essais ratés. */
-let reglages = charger('pilotage-reg', {}), connexions = charger('pilotage-conn', {}), essais = charger('pilotage-essais', { n: 0, jusqua: 0 });
+/* Codes, dernière connexion et essais ratés : gérés par le serveur. */
 let msgLogin = '';
 let etatsSim = { chargement: false, off: false, manque: {}, auto: {} };
-function codeDe(k) { return (reglages[k] && reglages[k].code) || ROLES[k].code; }
-function actif(k) { return !(reglages[k] && reglages[k].actif === false); }
 /* Fichiers sources par case et par restaurant : seuls les liens connus sont renseignés, les autres restent « à renseigner ». */
 const FICHIERS = { 'Indices opérationnels': { '525': '193QEStIHWSrYAf6dZ0Y2IS_5fxmK6viH9y-zYzwUJag', '649': '1uEuUhrxmUki4k2gJREZQyko6gRIUCL149YYeGfdQGw4' } };
 function lienSource(nom, resto) { const m = FICHIERS[nom]; return m && m[resto] ? 'https://docs.google.com/spreadsheets/d/' + m[resto] : null; }
@@ -728,13 +803,8 @@ function exemple(nom, ongletId) {
 /* ---------- Consignes ---------- */
 function aujourdhui(delta) { const d = new Date(); d.setDate(d.getDate() + (delta || 0)); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 function fmtDate(iso) { if (!iso) return 'sans échéance'; const [y, m, j] = iso.split('-'); return j + '/' + m + '/' + y; }
-let consignes = null;
-try { const brut = sessionStorage.getItem('pilotage-consignes'); if (brut) consignes = JSON.parse(brut); } catch (e) {}
-if (!consignes) consignes = [
-  { id: 1, to: 'dir525', onglet: 'chiffres', texte: 'Relancer le bon de livraison de jeudi (exemple).', echeance: aujourdhui(1), urgent: true, statut: 'envoyee' },
-  { id: 2, to: 'it', onglet: 'robots', texte: 'Vérifier pourquoi un robot a échoué ce matin (exemple).', echeance: aujourdhui(0), urgent: false, statut: 'envoyee' }
-];
-function sauverConsignes() { try { sessionStorage.setItem('pilotage-consignes', JSON.stringify(consignes)); } catch (e) {} }
+let consignes = [];
+function sauverConsignes() { sauver('pilotage-consignes', consignes); }
 function ouvertes(role) { return consignes.filter(c => c.to === role && c.statut !== 'faite'); }
 function enRetard(c) { return c.echeance && c.echeance < aujourdhui(0) && c.statut !== 'faite'; }
 function etat(t) {
@@ -912,31 +982,34 @@ document.getElementById('toastb').addEventListener('click', armerInactivite);
 /* ---------- Réglages du superviseur ---------- */
 function htmlReglages() {
   const lignes = Object.keys(ROLES).map(k => {
-    const c = connexions[k], mon = k === 'superviseur';
-    return `<article class="cs" data-k="${k}"><div class="cs-top"><strong>${esc(ROLES[k].nom)}</strong><span class="cs-st ${actif(k) ? 'faite' : ''}">${actif(k) ? 'Actif' : 'Désactivé'}</span></div>
-      <div class="mono">Dernière connexion : ${c ? depuis(c) : 'jamais'}</div>
-      <div class="cs-act"><input class="cs-note" value="${esc(codeDe(k))}" data-code="${k}" aria-label="Code de ${esc(ROLES[k].nom)}" autocapitalize="characters" spellcheck="false"><button class="btn small" data-savecode="${k}">Changer</button></div>
+    const ri = regInfos.find(x => x.role === k) || { actif: true, conn: 0 }, mon = k === 'superviseur';
+    return `<article class="cs" data-k="${k}"><div class="cs-top"><strong>${esc(ROLES[k].nom)}</strong><span class="cs-st ${ri.actif ? 'faite' : ''}">${ri.actif ? 'Actif' : 'Désactivé'}</span></div>
+      <div class="mono">Dernière connexion : ${ri.conn ? depuis(ri.conn) : 'jamais'}</div>
+      <div class="cs-act"><input class="cs-note" placeholder="Nouveau code" data-code="${k}" aria-label="Nouveau code de ${esc(ROLES[k].nom)}" autocapitalize="characters" spellcheck="false" autocomplete="off"><button class="btn small" data-savecode="${k}">Changer</button></div>
       <p class="err" data-err="${k}"></p>
-      <label class="chk"><input type="checkbox" data-actif="${k}" ${actif(k) ? 'checked' : ''} ${mon ? 'disabled' : ''}><span>Code actif${mon ? ' (le tien, toujours actif)' : ''}</span></label></article>`;
+      <label class="chk"><input type="checkbox" data-actif="${k}" ${ri.actif ? 'checked' : ''} ${mon ? 'disabled' : ''}><span>Code actif${mon ? ' (le tien, toujours actif)' : ''}</span></label></article>`;
   }).join('');
   return `<span class="mono">Superviseur</span><h3>Réglages</h3>
-    <p class="dnote">Chaque code ouvre un seul profil. Change un code si quelqu'un d'autre l'a vu, désactive-le si la personne part. Aperçu : les codes restent dans ce navigateur.</p>${lignes}`;
+    <p class="dnote">Les codes sont gardés sur le serveur et ne sont jamais lisibles. Pour en changer un, tape le nouveau code et appuie sur « Changer ». Désactive un code si la personne part.</p>${lignes}`;
 }
-function ouvrirReglages() {
+async function ouvrirReglages() {
   panneau = 'reglages'; ouvrirDrawer(htmlReglages()); liaisonsReglages();
+  const e = await appel({ a: 'etat', tab: courant() });
+  if (e && e.ok && e.reg && panneau === 'reglages' && !(document.activeElement && document.activeElement.closest('#dbody'))) { regInfos = e.reg; document.getElementById('dbody').innerHTML = htmlReglages(); liaisonsReglages(); }
 }
 function liaisonsReglages() {
   const corps = document.getElementById('dbody');
-  corps.querySelectorAll('[data-savecode]').forEach(b => b.addEventListener('click', () => {
+  corps.querySelectorAll('[data-savecode]').forEach(b => b.addEventListener('click', async () => {
     const k = b.dataset.savecode, v = corps.querySelector('[data-code="' + k + '"]').value.trim().toUpperCase(), err = corps.querySelector('[data-err="' + k + '"]');
-    if (!/^[A-Z0-9-]{4,20}$/.test(v)) { err.textContent = '4 à 20 caractères : lettres, chiffres, tirets.'; return; }
-    if (Object.keys(ROLES).some(o => o !== k && codeDe(o) === v)) { err.textContent = 'Ce code est déjà pris.'; return; }
-    reglages[k] = Object.assign({}, reglages[k], { code: v }); sauver('pilotage-reg', reglages);
-    corps.innerHTML = htmlReglages(); liaisonsReglages();
+    if (!v) return;
+    b.disabled = true; const r = await appel({ a: 'regcode', role: k, code: v }); b.disabled = false;
+    if (!r.ok) { err.textContent = r.msg || 'Impossible de changer ce code.'; return; }
+    regInfos = r.reg; corps.innerHTML = htmlReglages(); liaisonsReglages();
+    const ok = corps.querySelector('[data-err="' + k + '"]'); ok.style.color = 'var(--live)'; ok.textContent = 'Code changé.';
   }));
-  corps.querySelectorAll('[data-actif]').forEach(c => c.addEventListener('change', () => {
-    const k = c.dataset.actif; reglages[k] = Object.assign({}, reglages[k], { actif: c.checked }); sauver('pilotage-reg', reglages);
-    corps.innerHTML = htmlReglages(); liaisonsReglages();
+  corps.querySelectorAll('[data-actif]').forEach(c => c.addEventListener('change', async () => {
+    const r = await appel({ a: 'regactif', role: c.dataset.actif, actif: c.checked ? '1' : '0' });
+    if (r.ok) { regInfos = r.reg; corps.innerHTML = htmlReglages(); liaisonsReglages(); }
   }));
 }
 
@@ -1176,8 +1249,8 @@ async function activerNotifs() {
     const reg = await navigator.serviceWorker.ready;
     const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: cleEnOctets(PUSH_CLE_PUBLIQUE) });
     const abo = btoa(JSON.stringify(sub.toJSON())).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    await fetch(PUSH_SERVEUR + '?app=abonner&role=' + encodeURIComponent(roleId || '') + '&abo=' + abo, { mode: 'no-cors' });
-    dire('Notifications : activées');
+    const rep = await appel({ a: 'abonner', abo: abo });
+    dire(rep && rep.ok ? 'Notifications : activées' : 'Échec de l\'activation');
   } catch (e) { dire('Échec de l\'activation'); }
 }
 
@@ -1206,8 +1279,6 @@ document.getElementById('scrim').addEventListener('click', fermerPanneau);
 document.getElementById('dclose').addEventListener('click', fermerPanneau);
 addEventListener('keydown', e => { if (e.key === 'Escape') { fermerPanneau(); quitterReunion(); if (document.getElementById('tour')) finTuto(); } });
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && reunion) quitterReunion(); });
-try { roleId = sessionStorage.getItem('pilotage-role'); } catch (e) {}
-if (!ROLES[roleId]) roleId = null;
 
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 function ongletsRole() { return ROLES[roleId].onglets; }
@@ -1225,53 +1296,55 @@ function vivants() {
   Object.entries(presence).forEach(([role, tab]) => { if (tab) { s.add(tab); if (PERSONNE[role]) s.add(PERSONNE[role]); } });
   return s;
 }
-function entrer(id) {
+async function entrer(id) {
   roleId = id; scope = 'tous'; lastKey = null; lastBrand = null;
-  connexions[id] = Date.now(); sauver('pilotage-conn', connexions);
-  try { sessionStorage.setItem('pilotage-role', id); } catch (e) {}
+  const e = await appel({ a: 'etat', tab: '' });
+  if (e && e.ok) appliquerEtat(e);
   location.hash = ongletsRole()[0];
   render();
-  armerInactivite();
+  armerInactivite(); demarrerPoll();
   if (!tutoVu()) setTimeout(lancerTuto, 700);
 }
 function sortir() {
-  clearTimeout(tInact); clearTimeout(tAvert); cacherToast(); finTuto();
+  clearTimeout(tInact); clearTimeout(tAvert); cacherToast(); finTuto(); clearInterval(pollTimer);
   if (reunion) { reunion = false; clearInterval(reuTimer); clearInterval(clockTimer); try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {} }
-  roleId = null; lastKey = null; lastBrand = null;
-  try { sessionStorage.removeItem('pilotage-role'); } catch (e) {}
+  roleId = null; jeton = null; lastKey = null; lastBrand = null;
+  consignes = []; notes = {}; commentaires = {}; objectifs = {}; ordres = {}; ordresPoles = {}; presence = {}; regInfos = [];
+  try { localStorage.removeItem('pilotage-jeton'); } catch (e) {}
   history.replaceState(null, '', location.pathname);
   render();
 }
+async function restaurerSession() {
+  let st = null; try { st = JSON.parse(localStorage.getItem('pilotage-jeton') || 'null'); } catch (e) {}
+  if (!st || !st.jeton || st.exp < Date.now()) return false;
+  jeton = st.jeton;
+  const e = await appel({ a: 'etat', tab: '' });
+  if (!e || !e.ok) { jeton = null; return false; }
+  roleId = e.role; appliquerEtat(e); armerInactivite(); demarrerPoll();
+  return true;
+}
 
 function renderLogin(erreur) {
-  const verrou = essais.jusqua > Date.now();
-  if (verrou) erreur = 'Trop d\'essais. Réessaie dans ' + Math.ceil((essais.jusqua - Date.now()) / 60000) + ' min.';
   document.documentElement.removeAttribute('data-resto');
   root.innerHTML = `
   <div class="login"><div class="login-box">
     <div class="mark"><i></i><b>${marque()}</b></div>
     <h1>Pilotage des restaurants</h1>
     <form id="f" class="field" autocomplete="off">
-      <input id="code" type="text" placeholder="Code d'accès" aria-label="Code d'accès" autocapitalize="characters" spellcheck="false"${verrou ? ' disabled' : ''}>
-      <button class="btn" type="submit">Entrer</button>
+      <input id="code" type="text" placeholder="Code d'accès" aria-label="Code d'accès" autocapitalize="characters" spellcheck="false">
+      <button class="btn" type="submit" id="entrerbtn">Entrer</button>
     </form>
     <p class="err" id="err">${erreur ? esc(erreur) : ''}</p>
-    <div class="demo">
-      <span class="mono">Aperçu : choisis un code</span>
-      <div class="chips">${Object.entries(ROLES).map(([id, r]) => `<button class="chip" data-role="${id}"${actif(id) ? '' : ' disabled'}>${esc(codeDe(id))}</button>`).join('')}</div>
-    </div>
   </div></div>`;
-  document.getElementById('f').addEventListener('submit', e => {
+  document.getElementById('f').addEventListener('submit', async e => {
     e.preventDefault();
-    const v = document.getElementById('code').value.trim().toUpperCase();
-    if (essais.jusqua > Date.now()) { renderLogin(); return; }
-    const trouve = Object.keys(ROLES).find(k => codeDe(k) === v);
-    if (trouve && actif(trouve)) { essais = { n: 0, jusqua: 0 }; sauver('pilotage-essais', essais); entrer(trouve); return; }
-    if (trouve) { renderLogin('Ce code est désactivé.'); return; }
-    essais.n++; if (essais.n >= 5) { essais = { n: 0, jusqua: Date.now() + 5 * 60000 }; } sauver('pilotage-essais', essais);
-    renderLogin(essais.jusqua > Date.now() ? '' : 'Code inconnu. ' + (5 - essais.n) + ' essai' + (5 - essais.n > 1 ? 's' : '') + ' restant' + (5 - essais.n > 1 ? 's' : '') + '.');
+    const v = document.getElementById('code').value.trim();
+    if (!v) return;
+    const bt = document.getElementById('entrerbtn'); bt.disabled = true; bt.textContent = '…';
+    const r = await appel({ a: 'login', code: v });
+    if (r.ok) { jeton = r.jeton; try { localStorage.setItem('pilotage-jeton', JSON.stringify({ jeton: r.jeton, exp: r.exp })); } catch (x) {} await entrer(r.role); }
+    else renderLogin(r.reseau ? 'Impossible de joindre le serveur. Réessaie dans un instant.' : (r.msg || 'Code refusé.'));
   });
-  root.querySelectorAll('[data-role]').forEach(b => b.addEventListener('click', () => entrer(b.dataset.role)));
 }
 
 function renderApp() {
@@ -1314,10 +1387,7 @@ function renderApp() {
     return `<span class="rbw"><button class="rb${open ? ' open' : ''}${has ? ' has' : ''}${live ? ' live' : ''}" data-pl="${p.g.id}" aria-pressed="${open}" aria-label="${esc(p.g.nom)}" title="${esc(p.g.nom)}"><span>${INI[p.g.id] || '··'}</span><i class="dot"></i></button>${badges(tot)}</span>`;
   }).join('');
   const nav = poles.map(p => `<div class="pp${p.g.id === ouvert ? ' open' : ''}" data-pl="${p.g.id}"><span class="mono">${esc(p.g.nom)}</span>${p.liste.map(o => `<button class="tab${vifs.has(o.id) ? ' live' : ''}" data-tab="${o.id}" ${o.id === cur ? 'aria-current="page"' : ''}><span>${esc(o.nom)}</span>${badges(etat(o.id))}</button>`).join('')}</div>`).join('');
-  const sim = sup ? `<div class="sim">
-      <span class="mono">Simulation de présence (aperçu seulement)</span>
-      <div class="chips">${AUTRES.map(k => `<button class="chip" data-sim="${k}">${esc(ROLES[k].nom)} : ${presence[k] ? 'sur ' + esc(NOMS[presence[k]]) : 'hors ligne'}</button>`).join('')}</div>
-    </div>` : '';
+  const sim = '';
   const listeCourante = poles.find(p => p.g.id === groupe.id).liste;
   const simA = `<div class="sim">
       <span class="mono">Alertes d'exemple, onglets de ce pôle (aperçu seulement)</span>
@@ -1460,8 +1530,11 @@ root.addEventListener('pointermove', e => {
 
 function render() { if (roleId) renderApp(); else { const m = msgLogin; msgLogin = ''; renderLogin(m); } }
 window.addEventListener('hashchange', () => { if (roleId) renderApp(); });
-render();
-if (roleId) armerInactivite();
+(async () => {
+  let aJeton = false; try { aJeton = !!localStorage.getItem('pilotage-jeton'); } catch (e) {}
+  render();
+  if (aJeton && await restaurerSession()) render();
+})();
 </script>
 
 <script>if ("serviceWorker" in navigator) { addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {})); }</script>
