@@ -513,6 +513,18 @@ body.glisse, body.glisse * { cursor: grabbing !important; user-select: none; }
   .pos i.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
   .pos span { margin-left: 6px; }
 }
+/* Rond de la marque : voyant de connexion (vert à jour, orange synchronisation, rouge hors connexion) et battement de consigne. */
+.lfix { position: fixed; z-index: 200; }
+.lanim .lr.bleu { color: #7cc4ff; }
+.side .mark i.v-ok { --accent: var(--live); --glow: color-mix(in srgb, var(--live) 45%, transparent); }
+.side .mark i.v-sync { --accent: var(--ora); --glow: color-mix(in srgb, var(--ora) 45%, transparent); }
+.side .mark i.v-off { --accent: var(--rvif); --glow: color-mix(in srgb, var(--rvif) 55%, transparent); animation: clign 1.1s ease-in-out infinite; }
+@keyframes clign { 50% { opacity: .25; } }
+@keyframes batt-rond { 0%, 100% { transform: scale(1); } 40% { transform: scale(1.9); } }
+@keyframes batt-btn { 0%, 100% { transform: scale(1); } 40% { transform: scale(1.12); box-shadow: 0 0 30px 4px var(--ora); } }
+.side .mark i.batt { --accent: var(--ora); --glow: var(--ora); animation: batt-rond .32s ease-out; }
+.fab.batt { border-color: var(--ora); color: var(--ora); animation: batt-btn .32s ease-out; }
+@media (prefers-reduced-motion: reduce) { .side .mark i.v-off { animation: none; } .side .mark i.batt, .fab.batt { animation: none; } }
 /* iPhone : un champ dont le texte fait moins de 16 px déclenche un zoom automatique à la saisie. */
 @media (max-width: 700px) { input, select, textarea { font-size: 16px !important; } }
 </style>
@@ -668,8 +680,11 @@ function envoyerDiff(k, v) {
   const ops = diffOps(k, v);
   if (!ops.length) return;
   fileEnvoi = fileEnvoi.then(async () => {
-    for (const p of ops) { const r = await appel(p); if (r && r.reseau) { horsLigne = true; echecEnvoi = true; if (roleId) renderApp(); return; } }
-    await rafraichirEtat();
+    enEnvoi++; majVoyant();
+    try {
+      for (const p of ops) { const r = await appel(p); if (r && r.reseau) { horsLigne = true; echecEnvoi = true; if (roleId) renderApp(); return; } }
+      await rafraichirEtat();
+    } finally { enEnvoi--; majVoyant(); }
   });
 }
 async function rafraichirEtat() {
@@ -678,9 +693,12 @@ async function rafraichirEtat() {
   if (e && e.reseau) { if (!horsLigne) { horsLigne = true; if (roleId) renderApp(); } return; }
   if (!e || !e.ok || !roleId) return;
   const etaitHors = horsLigne; horsLigne = false; echecEnvoi = false;
+  const avantIds = estSup() ? null : new Set(ouvertes(roleId).map(c => c.id));
   const avant = partage(); appliquerEtat(e);
+  const nouvelles = avantIds ? ouvertes(roleId).filter(c => !avantIds.has(c.id)).length : 0;
   if ((avant === partage() && !etaitHors) || document.getElementById('tour') || document.body.classList.contains('glisse')) return;
   renderApp();
+  if (nouvelles) battementConsigne();
   if (panneau === 'consignes' && !(document.activeElement && document.activeElement.closest && document.activeElement.closest('#dbody'))) { document.getElementById('dbody').innerHTML = htmlConsignes(); liaisonsConsignes(); }
 }
 function demarrerPoll() {
@@ -1070,7 +1088,7 @@ function armerInactivite() {
     maj(); document.getElementById('toast').classList.add('on');
     tCompte = setInterval(() => { reste--; if (reste >= 0) maj(); else clearInterval(tCompte); }, 1000);
   }, INACTIVITE_MS - AVERT_MS);
-  tInact = setTimeout(() => { msgLogin = 'Session fermée après 30 minutes sans activité.'; sortir(); }, INACTIVITE_MS);
+  tInact = setTimeout(() => { msgLogin = 'Session fermée après 30 minutes sans activité.'; sortirAnime(); }, INACTIVITE_MS);
 }
 ['pointerdown', 'keydown', 'scroll'].forEach(ev => addEventListener(ev, () => { if (!roleId) return; const n = Date.now(); if (n - dernierReset > 1000) { dernierReset = n; armerInactivite(); } }, { passive: true }));
 document.getElementById('toastb').addEventListener('click', armerInactivite);
@@ -1130,9 +1148,9 @@ function ouvrirMonCode() {
     bt.disabled = true;
     const r = await appel({ a: 'moncode', ancien: ancien, nouveau: n1 });
     bt.disabled = false;
-    if (!r.ok) { msg.textContent = r.reseau ? 'Impossible de joindre le serveur.' : (r.msg || 'Impossible de changer le code.'); return; }
+    if (!r.ok) { msg.textContent = r.reseau ? 'Impossible de joindre le serveur.' : (r.msg || 'Impossible de changer le code.'); if (!r.reseau) animConfirm(false); return; }
     ['mc-old', 'mc-new', 'mc-new2'].forEach(id => { document.getElementById(id).value = ''; });
-    msg.style.color = 'var(--live)'; msg.textContent = 'Code changé. Utilise-le à ta prochaine connexion.';
+    msg.style.color = 'var(--live)'; msg.textContent = 'Code changé. Utilise-le à ta prochaine connexion.'; animConfirm(true);
   });
 }
 
@@ -1431,6 +1449,70 @@ async function entrer(id) {
   armerInactivite(); demarrerPoll();
   if (!tutoVu()) setTimeout(lancerTuto, 700);
 }
+/* ---------- Le rond de la marque : voyant de connexion, battement de consigne, déconnexion et confirmations animées ---------- */
+let enEnvoi = 0, battEnCours = false;
+const TITRES_VOYANT = { off: 'Hors connexion', sync: 'Synchronisation…', ok: 'Connecté, à jour' };
+function etatVoyant() { return horsLigne ? 'off' : (enEnvoi > 0 ? 'sync' : 'ok'); }
+function majVoyant() {
+  const i = document.querySelector('.side .mark i'); if (!i) return;
+  const v = etatVoyant(); i.className = (i.classList.contains('batt') ? 'batt ' : '') + 'v-' + v; i.title = TITRES_VOYANT[v];
+}
+const sansAnim = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+/* Nouvelle consigne reçue : rond, bouton Consignes, rond, trois fois, en orange. */
+async function battementConsigne() {
+  if (battEnCours || !roleId || sansAnim()) return;
+  battEnCours = true;
+  for (let n = 0; n < 3; n++) for (const sel of ['.side .mark i', '#consbtn', '.side .mark i']) {
+    const el = document.querySelector(sel); if (!el) continue;
+    el.classList.add('batt'); await new Promise(r => setTimeout(r, 320)); el.classList.remove('batt'); await new Promise(r => setTimeout(r, 90));
+  }
+  battEnCours = false;
+}
+/* Prépare un voile plein écran avec le M officiel au centre. */
+function voileLogoM(lm, id, W, H, Lw) {
+  const Lh = Lw * lm.h / lm.w, svg = svgEl('svg', { width: W, height: H, class: 'lanim lfix', 'aria-hidden': 'true' }, document.body);
+  const mk = svgEl('mask', { id, maskUnits: 'userSpaceOnUse', x: -Lw / 2, y: -Lh / 2, width: Lw, height: Lh }, svgEl('defs', {}, svg));
+  svgEl('image', { href: lm.url, x: -Lw / 2, y: -Lh / 2, width: Lw, height: Lh }, mk);
+  const lg = svgEl('g', { transform: `translate(${W / 2},${H / 2}) scale(.5)` }, svg); lg.style.opacity = 0;
+  svgEl('rect', { x: -Lw / 2, y: -Lh / 2, width: Lw, height: Lh, fill: 'currentColor', mask: `url(#${id})` }, lg);
+  return { svg, lg };
+}
+/* Confirmation d'un changement de code : M vert qui apparaît, ou M rouge qui tremble. */
+async function animConfirm(ok) {
+  if (sansAnim()) return;
+  const lm = await chargerLogoM(); if (!lm) return;
+  const W = innerWidth, H = innerHeight, { svg, lg } = voileLogoM(lm, 'lcmask', W, H, Math.min(110, W * .3));
+  lg.setAttribute('class', 'lg ' + (ok ? 'ok' : 'ko'));
+  const place = (dx, s) => lg.setAttribute('transform', `translate(${W / 2 + dx},${H / 2}) scale(${s})`);
+  await tween(380, k => { place(0, .5 + .5 * easeBack(k)); lg.style.opacity = Math.min(1, k * 4); });
+  if (ok) await attendre(520); else await tween(460, k => place(Math.sin(k * Math.PI * 6) * 12 * (1 - k), 1));
+  await tween(280, k => { lg.style.opacity = 1 - k; });
+  svg.remove();
+}
+/* Déconnexion : l'écran s'efface, le M bleu apparaît puis se réduit en rond qui va se poser à côté de la marque. */
+async function sortirAnime() {
+  if (!roleId || animEnCours || sansAnim()) { sortir(); return; }
+  const lm = await chargerLogoM(); if (!lm) { sortir(); return; }
+  animEnCours = true; animVit = 1;
+  const W = innerWidth, H = innerHeight, cx = W / 2, cy = H / 2, Lw = Math.min(150, W * .4), { svg, lg } = voileLogoM(lm, 'lsmask', W, H, Lw);
+  lg.setAttribute('class', 'lg bleu');
+  const g = svgEl('g', { class: 'lr bleu' }, svg); g.style.opacity = 0;
+  svgEl('circle', { r: 6, fill: 'none', stroke: 'currentColor', 'stroke-width': 2 }, g); svgEl('circle', { r: 3.6, fill: 'currentColor' }, g);
+  root.style.transition = 'opacity .45s'; root.style.opacity = 0;
+  await tween(480, k => { lg.setAttribute('transform', `translate(${cx},${cy}) scale(${.5 + .5 * easeBack(k)})`); lg.style.opacity = Math.min(1, k * 4); });
+  await attendre(150);
+  sortir();
+  const box = document.querySelector('.login-box');
+  box.classList.add('cache', 'enroute'); root.style.transition = 'none'; root.style.opacity = 1;
+  requestAnimationFrame(() => box.classList.remove('cache'));
+  const r = box.querySelector('.mark i').getBoundingClientRect(), tx = r.left + r.width / 2, ty = r.top + r.height / 2, s1 = 14 / Lw;
+  await tween(620, k => {
+    const e = easeIO(k), x = cx + (tx - cx) * e, y = cy + (ty - cy) * e, f = Math.max(0, (k - .55) / .45);
+    lg.setAttribute('transform', `translate(${x},${y}) scale(${1 - (1 - s1) * e})`); lg.style.opacity = 1 - f;
+    g.setAttribute('transform', `translate(${x},${y})`); g.style.opacity = f;
+  });
+  svg.remove(); box.classList.remove('enroute'); root.style.transition = ''; animEnCours = false;
+}
 function sortir() {
   clearTimeout(tInact); clearTimeout(tAvert); cacherToast(); finTuto(); clearInterval(pollTimer);
   if (reunion) { reunion = false; clearInterval(reuTimer); clearInterval(clockTimer); try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {} }
@@ -1701,7 +1783,7 @@ function renderApp() {
   <div class="app${reunion ? ' reu' : ''}">
     <nav class="side" aria-label="Onglets">
       <div class="sidebody">
-      <div class="mark"><i></i><b class="${brandAnim ? 'typed' : ''}" aria-label="${esc(brand)}">${brandAnim ? lettres(brand, 55) : esc(brand)}</b><span class="mk-act"><button class="mkb" id="codebtn" aria-label="Mon code" title="Mon code"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M14 9l2 2"/></svg></button><button class="mkb" id="helpbtn" aria-label="Revoir le didacticiel" title="Revoir le didacticiel">?</button>${sup ? '<button class="mkb" id="regbtn" aria-label="Réglages" title="Réglages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>' : ''}</span></div>
+      <div class="mark"><i class="v-${etatVoyant()}" title="${TITRES_VOYANT[etatVoyant()]}"></i><b class="${brandAnim ? 'typed' : ''}" aria-label="${esc(brand)}">${brandAnim ? lettres(brand, 55) : esc(brand)}</b><span class="mk-act"><button class="mkb" id="codebtn" aria-label="Mon code" title="Mon code"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M14 9l2 2"/></svg></button><button class="mkb" id="helpbtn" aria-label="Revoir le didacticiel" title="Revoir le didacticiel">?</button>${sup ? '<button class="mkb" id="regbtn" aria-label="Réglages" title="Réglages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>' : ''}</span></div>
       <div class="who"><span class="mono">Connecté</span><strong>${esc(r.nom)}</strong></div>
       <div class="rail${poles.length > 5 ? ' dense' : ''}" role="group" aria-label="Pôles">${rail}</div>
       ${legende}
@@ -1804,7 +1886,7 @@ function renderApp() {
   }));
   const rg = document.getElementById('regbtn'); if (rg) rg.addEventListener('click', ouvrirReglages);
   document.getElementById('notifbtn').addEventListener('click', activerNotifs);
-  document.getElementById('out').addEventListener('click', sortir);
+  document.getElementById('out').addEventListener('click', sortirAnime);
   root.querySelectorAll('[data-jour]').forEach(b => b.addEventListener('click', () => ouvrirJour(b.dataset.jour)));
   if (reunion) majHorloge();
 }
