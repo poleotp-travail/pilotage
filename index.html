@@ -352,7 +352,7 @@ a.src:hover { text-decoration: underline; text-underline-offset: 3px; }
 #tour .demo div { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--fg); }
 #tour .demo .ic { width: 14px; display: grid; place-items: center; flex: none; }
 #tour .skip { background: transparent; border: 0; color: var(--muted); font-size: 13px; padding: 6px 8px; }
-@media (max-width: 700px) { #tour .tip { left: 16px !important; right: 16px; bottom: 16px; top: auto !important; width: auto; } }
+@media (max-width: 700px) { #tour .tip { left: 16px !important; right: 16px; width: auto; } }
 @media (prefers-reduced-motion: no-preference) { #toast { transition: transform .45s cubic-bezier(.2,.8,.2,1), visibility .45s; } #tour .spot { transition: all .4s cubic-bezier(.2,.8,.2,1); } #tour .tip { animation: rise .45s cubic-bezier(.2,.8,.2,1) backwards; } }
 @media print { #toast, #tour { display: none !important; } .mk-act { display: none; } }
 
@@ -494,7 +494,7 @@ body.glisse, body.glisse * { cursor: grabbing !important; user-select: none; }
 <script>
 /* Structure seule : onglets, codes d'accès, périmètres et présence simulée. Aucun contenu réel pour l'instant. */
 const RESTOS = { '905': 'Rognac 905', '525': 'Istres Craux 525', '649': 'Istres Cognets 649' };
-const MARQUES = { tous: 'K2I', '905': 'KY WEST', '525': 'ISTRES 1', '649': 'ISTRES 2' };
+const MARQUES = { tous: 'K2I', '905': 'KY WEST', '525': 'ISTRELIA 1', '649': 'ISTRELIA 2' };
 
 const GROUPES = [
   { id: 'ops', nom: 'Opérations', onglets: [
@@ -1057,6 +1057,8 @@ function montrerEtape() {
       spot.style.left = '50%'; spot.style.top = '50%'; spot.style.width = '0px'; spot.style.height = '0px';
       tip.style.left = Math.max(16, (innerWidth - tip.offsetWidth) / 2) + 'px'; tip.style.top = Math.max(16, (innerHeight - tip.offsetHeight) / 2) + 'px';
     }
+    /* Téléphone : la bulle va en haut si la cible est dans la moitié basse de l'écran (le bouton Consignes), sinon en bas. */
+    if (innerWidth <= 700) { const rc = el2 ? el2.getBoundingClientRect() : null, haut = rc && (rc.top + rc.height / 2 > innerHeight / 2); tip.style.top = haut ? '16px' : 'auto'; tip.style.bottom = haut ? 'auto' : '16px'; }
   }, 60);
   document.getElementById('tskip').addEventListener('click', finTuto);
   const pv = document.getElementById('tprev'); if (pv) pv.addEventListener('click', () => { tourI--; montrerEtape(); });
