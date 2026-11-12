@@ -547,7 +547,8 @@ const GROUPES = [
   ]},
   { id: 'equipe', nom: 'Équipe', onglets: [
     { id: 'alice', nom: 'Alice', resp: 'RH opérationnel', prevu: ['Tout ce qu’Alice suit côté RH'] },
-    { id: 'emilie-theo', nom: 'Émilie / Théo', resp: 'IT et maintenance', prevu: ['Tout ce qu’Émilie et Théo suivent côté IT et maintenance'] },
+    { id: 'emilie', nom: 'Émilie', resp: 'IT et maintenance', prevu: ['Tout ce qu’Émilie suit côté IT et maintenance'] },
+    { id: 'theo', nom: 'Théo', resp: 'IT et maintenance', prevu: ['Tout ce que Théo suit côté IT et maintenance'] },
     { id: 'madison', nom: 'Madison', resp: 'Formation', prevu: ['Tout ce que Madison suit côté formation'] }
   ]}
 ];
@@ -559,7 +560,7 @@ const PRIVES = ['franchise', 'rhadmin'];
 const ONGLETS_PRIVES = ['rhadmin'];
 const ROLES = {
   superviseur: { nom: 'Superviseur', onglets: TOUS.filter(t => !ONGLETS_PRIVES.includes(t)), resto: null },
-  franchise: { nom: 'Franchisé', onglets: TOUS.filter(t => !['alice', 'emilie-theo', 'madison'].includes(t)), resto: null },
+  franchise: { nom: 'Franchisé', onglets: TOUS.filter(t => !['alice', 'emilie', 'theo', 'madison'].includes(t)), resto: null },
   rhadmin: { nom: 'RH administratif', onglets: ['rhadmin'], resto: null },
   dir905: { nom: 'Directeur Rognac', resto: '905', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'bilans'] },
   dir525: { nom: 'Directeur Craux', resto: '525', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'bilans'] },
@@ -569,7 +570,7 @@ const ROLES = {
   rh: { nom: 'RH opérationnel', resto: null, onglets: ['turnover', 'atterrissage', 'personnel'] }
 };
 /* Quel onglet « Équipe » correspond à quel code. */
-const PERSONNE = { rh: 'alice', it: 'emilie-theo', formation: 'madison' };
+const PERSONNE = { rh: 'alice', it: ['emilie', 'theo'], formation: 'madison' };
 /* Profils qui pilotent (consignes, objectifs, codes) : superviseur et franchisé. */
 function estSup() { return roleId === 'superviseur' || roleId === 'franchise'; }
 /* Qui je vois : le franchisé voit tout ; le superviseur ne voit ni le franchisé ni le RH administratif. */
@@ -1403,7 +1404,7 @@ function courant() {
 function vivants() {
   const s = new Set();
   if (!estSup()) return s;
-  Object.entries(presence).forEach(([role, tab]) => { if (tab) { s.add(tab); if (PERSONNE[role]) s.add(PERSONNE[role]); } });
+  Object.entries(presence).forEach(([role, tab]) => { if (tab) { s.add(tab); if (PERSONNE[role]) [].concat(PERSONNE[role]).forEach(x => s.add(x)); } });
   return s;
 }
 async function entrer(id) {
