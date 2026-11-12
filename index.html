@@ -1402,7 +1402,7 @@ function renderApp() {
       <div class="rail" role="group" aria-label="Pôles">${rail}</div>
       ${legende}
       <div class="pps">${nav}</div>
-      <div class="footwrap"><div class="foot"><button class="themebtn" id="reubtn">Mode réunion</button><button class="themebtn" id="themebtn">${THEMES[theme]}</button><button class="themebtn" id="notifbtn">${notifLabel()}</button></div></div>
+      <div class="footwrap"><button class="out" id="out">Changer de code</button><div class="foot"><button class="themebtn" id="reubtn">Mode réunion</button><button class="themebtn" id="themebtn">${THEMES[theme]}</button><button class="themebtn" id="notifbtn">${notifLabel()}</button></div></div>
       </div>
     </nav>
     <main class="main${anim ? ' enter' : ''}">
@@ -1498,6 +1498,7 @@ function renderApp() {
   }));
   const rg = document.getElementById('regbtn'); if (rg) rg.addEventListener('click', ouvrirReglages);
   document.getElementById('notifbtn').addEventListener('click', activerNotifs);
+  document.getElementById('out').addEventListener('click', sortir);
   root.querySelectorAll('[data-jour]').forEach(b => b.addEventListener('click', () => ouvrirJour(b.dataset.jour)));
   if (reunion) majHorloge();
 }
