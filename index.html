@@ -513,6 +513,8 @@ body.glisse, body.glisse * { cursor: grabbing !important; user-select: none; }
   .pos i.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
   .pos span { margin-left: 6px; }
 }
+/* iPhone : un champ dont le texte fait moins de 16 px déclenche un zoom automatique à la saisie. */
+@media (max-width: 700px) { input, select, textarea { font-size: 16px !important; } }
 </style>
 </head><body>
 
