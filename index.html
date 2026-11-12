@@ -130,6 +130,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .pp { --accent: var(--pc); --accent-soft: var(--pc-soft); --bubble: var(--pc-bubble); }
 .pp > .mono { color: var(--pc); }
 .rail { display: flex; justify-content: space-between; gap: 6px; padding: 0 8px; }
+.rail.dense { flex-wrap: wrap; justify-content: flex-start; gap: 10px 8px; }
 .rb { position: relative; width: 42px; height: 42px; flex: none; border-radius: 50%; border: 1px solid oklch(var(--pl) var(--pcc) var(--ph) / .5); background: linear-gradient(150deg, oklch(var(--pl) var(--pcc) var(--ph) / .13), transparent 70%); color: var(--pc); display: grid; place-items: center;
   font-family: var(--font-mono); font-size: 11px; letter-spacing: .04em; overflow: hidden; isolation: isolate; --mx: 50%; --my: 50%; padding: 0; }
 .rb span { position: relative; z-index: 1; }
@@ -1504,7 +1505,7 @@ function renderApp() {
       <div class="sidebody">
       <div class="mark"><i></i><b class="${brandAnim ? 'typed' : ''}" aria-label="${esc(brand)}">${brandAnim ? lettres(brand, 55) : esc(brand)}</b><span class="mk-act"><button class="mkb" id="codebtn" aria-label="Mon code" title="Mon code"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M14 9l2 2"/></svg></button><button class="mkb" id="helpbtn" aria-label="Revoir le didacticiel" title="Revoir le didacticiel">?</button>${sup ? '<button class="mkb" id="regbtn" aria-label="Réglages" title="Réglages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>' : ''}</span></div>
       <div class="who"><span class="mono">Connecté</span><strong>${esc(r.nom)}</strong></div>
-      <div class="rail" role="group" aria-label="Pôles">${rail}</div>
+      <div class="rail${poles.length > 5 ? ' dense' : ''}" role="group" aria-label="Pôles">${rail}</div>
       ${legende}
       <div class="pps">${nav}</div>
       <div class="footwrap"><button class="out" id="out">Changer de code</button><div class="foot"><button class="themebtn" id="reubtn">Mode réunion</button><button class="themebtn" id="themebtn">${THEMES[theme]}</button><button class="themebtn" id="notifbtn">${notifLabel()}</button></div></div>
