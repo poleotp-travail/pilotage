@@ -126,6 +126,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 [data-pl="maint"] { --ph: 82; --po: -26; }
 [data-pl="equipe"] { --ph: 285; }
 [data-pl="form"] { --ph: 22; }
+[data-pl="rhadm"] { --ph: 190; }
 .pp { --accent: var(--pc); --accent-soft: var(--pc-soft); --bubble: var(--pc-bubble); }
 .pp > .mono { color: var(--pc); }
 .rail { display: flex; justify-content: space-between; gap: 6px; padding: 0 8px; }
@@ -528,6 +529,9 @@ const GROUPES = [
   { id: 'form', nom: 'Formation', onglets: [
     { id: 'formation', nom: 'Formation', resp: 'MADISON', prevu: ['À définir'] }
   ]},
+  { id: 'rhadm', nom: 'RH administratif', onglets: [
+    { id: 'rhadmin', nom: 'RH administratif', resp: 'RH administratif', prevu: ['À définir'] }
+  ]},
   { id: 'equipe', nom: 'Équipe', onglets: [
     { id: 'alice', nom: 'Alice', resp: 'RH opérationnel', prevu: ['Tout ce qu’Alice suit côté RH'] },
     { id: 'emilie-theo', nom: 'Émilie / Théo', resp: 'IT et maintenance', prevu: ['Tout ce qu’Émilie et Théo suivent côté IT et maintenance'] },
@@ -537,8 +541,13 @@ const GROUPES = [
 
 const TOUS = GROUPES.flatMap(g => g.onglets.map(o => o.id));
 const NOMS = Object.fromEntries(GROUPES.flatMap(g => g.onglets.map(o => [o.id, o.nom])));
+/* Espace privé : l'onglet « RH administratif » n'est visible que par le franchisé et le RH administratif. Le superviseur n'y a aucun accès. */
+const PRIVES = ['franchise', 'rhadmin'];
+const ONGLETS_PRIVES = ['rhadmin'];
 const ROLES = {
-  superviseur: { nom: 'Superviseur', onglets: TOUS, resto: null },
+  superviseur: { nom: 'Superviseur', onglets: TOUS.filter(t => !ONGLETS_PRIVES.includes(t)), resto: null },
+  franchise: { nom: 'Franchisé', onglets: TOUS, resto: null },
+  rhadmin: { nom: 'RH administratif', onglets: ['rhadmin'], resto: null },
   dir905: { nom: 'Directeur Rognac', resto: '905', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'bilans'] },
   dir525: { nom: 'Directeur Craux', resto: '525', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'bilans'] },
   dir649: { nom: 'Directeur Cognets', resto: '649', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'bilans'] },
@@ -548,7 +557,11 @@ const ROLES = {
 };
 /* Quel onglet « Équipe » correspond à quel code. */
 const PERSONNE = { rh: 'alice', it: 'emilie-theo', formation: 'madison' };
-const AUTRES = Object.keys(ROLES).filter(k => k !== 'superviseur');
+/* Profils qui pilotent (consignes, objectifs, codes) : superviseur et franchisé. */
+function estSup() { return roleId === 'superviseur' || roleId === 'franchise'; }
+/* Qui je vois : le franchisé voit tout ; le superviseur ne voit ni le franchisé ni le RH administratif. */
+function rolesVisibles() { return Object.keys(ROLES).filter(k => roleId === 'franchise' || !PRIVES.includes(k)); }
+function destinataires() { return rolesVisibles().filter(k => k !== 'superviseur' && k !== 'franchise'); }
 
 const root = document.getElementById('root');
 let roleId = null, scope = 'tous', presence = {}, lastKey = null, lastBrand = null, ouvert = null, panneau = null, comparer = 'prev', periode = 'sem', jourRef = null;
@@ -571,7 +584,7 @@ async function appel(params) {
 }
 /* Chiffre rouge sur l'icône de l'app : nombre de consignes à traiter (rien pour le superviseur). */
 function majBadgeApp() {
-  const n = roleId && roleId !== 'superviseur' ? ouvertes(roleId).length : 0;
+  const n = roleId && !estSup() ? ouvertes(roleId).length : 0;
   try { if (navigator.setAppBadge) { if (n > 0) navigator.setAppBadge(n); else navigator.clearAppBadge(); } } catch (e) {}
   try { caches.open('pilotage-badge').then(c => c.put('n', new Response(String(n)))); } catch (e) {}
 }
@@ -755,7 +768,7 @@ function htmlModule(nom, tabId) {
   const info = GROUPES.flatMap(g => g.onglets).find(o => o.id === tabId), groupe = GROUPES.find(g => g.onglets.some(o => o.id === tabId));
   if (etatsSim.manque[cle(tabId, nom)]) return `${posHtml(info, nom)}<span class="mono">${esc(groupe.nom)} · ${esc(info.nom)}</span><h3>${esc(nom)}</h3><span class="mono">${esc(libelleScopeGlobal())}</span><div class="hatch"></div><div class="nd-lab"><i></i>Donnée non reçue</div><p class="dnote">Le robot n'a rien déposé pour cette case. Au lieu d'un chiffre trompeur, rien n'est affiché. Dès que la donnée arrive, la case reprend son aspect normal.</p>`;
   const e = exemple(nom, tabId), o = objectifDe(tabId, nom, e), st = statutObj(e.v, o), k = cle(tabId, nom), fils = commentaires[k] || [];
-  const sup = roleId === 'superviseur';
+  const sup = estSup();
   const pct = Math.max(4, Math.min(100, Math.round((o.sens === 'bas' ? o.obj / e.v : e.v / o.obj) * 100)));
   const al = alertesCases(tabId, info.prevu.length)[Math.max(0, info.prevu.indexOf(nom))] || {};
   const tagsAl = (al.robot ? `<span class="tag rv">${al.robot} robot${al.robot > 1 ? 's' : ''} en erreur</span>` : '') + (al.auto ? `<span class="tag rf">Sous l'objectif depuis ${al.auto} semaines · alerte automatique</span>` : (al.alerte ? '<span class="tag rf">Alerte à traiter</span>' : ''));
@@ -765,7 +778,7 @@ function htmlModule(nom, tabId) {
     <div class="obj ${st}"><div class="bar"><i style="width:${pct}%"></i></div><span>Objectif ${fmtNum(o.obj)} (${o.sens === 'bas' ? 'le plus bas possible' : 'le plus haut possible'}) · <b>${LIBST[st]}</b></span></div>
     ${sup ? `<form class="objform" id="objform"><input type="number" step="0.1" id="objv" value="${o.obj}" aria-label="Objectif"><select id="objs" aria-label="Sens"><option value="haut"${o.sens === 'haut' ? ' selected' : ''}>Plus haut = mieux</option><option value="bas"${o.sens === 'bas' ? ' selected' : ''}>Plus bas = mieux</option></select><button class="btn small" type="submit">Fixer l'objectif</button></form>` : ''}
     <span class="mono">Repères sur la courbe (${(notes[k] || []).length})</span>
-    <div class="notes">${(notes[k] || []).length ? (notes[k] || []).slice().sort((a, b) => b.date.localeCompare(a.date)).map(r => `<div class="note-l"><div><span class="mono">${fmtDate(r.date)} · ${esc(ROLES[r.de].nom)}</span><p>${esc(r.texte)}</p></div>${r.de === roleId || roleId === 'superviseur' ? `<button class="cs-del" data-delnote="${r.t}" aria-label="Retirer ce repère">×</button>` : ''}</div>`).join('') : '<p class="empty">Aucun repère. Note un événement (travaux, jour férié, panne) pour expliquer une variation.</p>'}</div>
+    <div class="notes">${(notes[k] || []).length ? (notes[k] || []).slice().sort((a, b) => b.date.localeCompare(a.date)).map(r => `<div class="note-l"><div><span class="mono">${fmtDate(r.date)} · ${esc(ROLES[r.de].nom)}</span><p>${esc(r.texte)}</p></div>${r.de === roleId || estSup() ? `<button class="cs-del" data-delnote="${r.t}" aria-label="Retirer ce repère">×</button>` : ''}</div>`).join('') : '<p class="empty">Aucun repère. Note un événement (travaux, jour férié, panne) pour expliquer une variation.</p>'}</div>
     <form class="cmt" id="noteform"><select id="notej" aria-label="Jour">${Array.from({ length: 28 }, (_, i) => { const iso = aujourdhui(-i), d = new Date(iso + 'T12:00:00'); return `<option value="${iso}">${i === 0 ? 'Aujourd\'hui' : d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}</option>`; }).join('')}</select><input id="notet" placeholder="Ex. : travaux en salle" aria-label="Repère" autocomplete="off"><button class="btn small" type="submit">Ajouter</button></form>
     <span class="mono">Fichiers sources</span>
     <div class="srcs">${restosScope().map(rs => { const u = lienSource(nom, rs); return u ? `<a class="srcl" href="${u}" target="_blank" rel="noopener">${esc(RESTOS[rs])} ↗</a>` : `<span class="srcl off">${esc(RESTOS[rs])} · lien à renseigner</span>`; }).join('')}</div>
@@ -864,7 +877,7 @@ function ouvertes(role) { return consignes.filter(c => c.to === role && c.statut
 function enRetard(c) { return c.echeance && c.echeance < aujourdhui(0) && c.statut !== 'faite'; }
 function etat(t) {
   const a = alertes[t] || {};
-  const c = roleId && roleId !== 'superviseur' ? ouvertes(roleId).filter(x => x.onglet === t).length : 0;
+  const c = roleId && !estSup() ? ouvertes(roleId).filter(x => x.onglet === t).length : 0;
   const it = infoTab(t), au = it ? it.prevu.filter(nom => autoAlerte(t, nom)).length : 0;
   return { robot: a.robot || 0, alerte: (a.alerte || 0) + c + au };
 }
@@ -880,11 +893,11 @@ function htmlConsigne(c, sup) {
   return `<article class="cs${c.urgent ? ' urg' : ''}" data-cs="${c.id}">${haut}<p>${esc(c.texte)}</p>${meta}${meta2}${lien}<div class="cs-act"><input class="cs-note" placeholder="Commentaire (facultatif)" aria-label="Commentaire"><button class="btn small" data-fait="${c.id}">Fait</button></div></article>`;
 }
 function htmlConsignes() {
-  if (roleId === 'superviseur') {
+  if (estSup()) {
     const liste = consignes.slice().reverse().map(c => htmlConsigne(c, true)).join('');
     return `<span class="mono">Pour toute l'équipe</span><h3>Consignes</h3>
     <form class="cform" id="cform">
-      <label><span class="mono">Pour</span><select id="cto">${AUTRES.map(k => `<option value="${k}">${esc(ROLES[k].nom)}</option>`).join('')}</select></label>
+      <label><span class="mono">Pour</span><select id="cto">${destinataires().map(k => `<option value="${k}">${esc(ROLES[k].nom)}</option>`).join('')}</select></label>
       <label><span class="mono">Onglet</span><select id="con"></select></label>
       <div class="tpls" id="tpls"></div>
       <label><span class="mono">Consigne</span><textarea id="ctx" placeholder="Ce que la personne doit faire" required></textarea></label>
@@ -911,7 +924,7 @@ function htmlConsignes() {
 function consignesDe(role) { return consignes.filter(c => c.to === role); }
 function ouvrirConsignes() {
   panneau = 'consignes';
-  if (roleId !== 'superviseur') {
+  if (!estSup()) {
     let change = false;
     consignes.forEach(c => { if (c.to === roleId && c.statut === 'envoyee') { c.statut = 'vue'; change = true; } });
     if (change) sauverConsignes();
@@ -978,7 +991,7 @@ function initCalendrier() {
 const TYPES_EVT = { consigne: 'Consigne', urgent: 'Consigne urgente', bilan: 'Bilan', fin: 'Fin de mois', presta: 'Prestataire' };
 const NB_JOURS = 28;
 function evenements() {
-  const r = ROLES[roleId], out = {}, sup = roleId === 'superviseur';
+  const r = ROLES[roleId], out = {}, sup = estSup();
   const add = (iso, ev) => { (out[iso] = out[iso] || []).push(ev); };
   (sup ? consignes.filter(c => c.statut !== 'faite') : ouvertes(roleId)).forEach(c => {
     if (c.echeance) add(c.echeance, { type: c.urgent ? 'urgent' : 'consigne', label: (sup ? 'Pour ' + ROLES[c.to].nom + ' : ' : '') + c.texte, onglet: c.onglet });
@@ -1036,15 +1049,15 @@ document.getElementById('toastb').addEventListener('click', armerInactivite);
 
 /* ---------- Réglages du superviseur ---------- */
 function htmlReglages() {
-  const lignes = Object.keys(ROLES).map(k => {
-    const ri = regInfos.find(x => x.role === k) || { actif: true, conn: 0 }, mon = k === 'superviseur';
+  const lignes = rolesVisibles().map(k => {
+    const ri = regInfos.find(x => x.role === k) || { actif: true, conn: 0 }, mon = k === roleId;
     return `<article class="cs" data-k="${k}"><div class="cs-top"><strong>${esc(ROLES[k].nom)}</strong><span class="cs-st ${ri.actif ? 'faite' : ''}">${ri.actif ? 'Actif' : 'Désactivé'}</span></div>
       <div class="mono">Dernière connexion : ${ri.conn ? depuis(ri.conn) : 'jamais'}</div>
       <div class="cs-act"><input class="cs-note" placeholder="Nouveau code" data-code="${k}" aria-label="Nouveau code de ${esc(ROLES[k].nom)}" autocapitalize="characters" spellcheck="false" autocomplete="off"><button class="btn small" data-savecode="${k}">Changer</button></div>
       <p class="err" data-err="${k}"></p>
       <label class="chk"><input type="checkbox" data-actif="${k}" ${ri.actif ? 'checked' : ''} ${mon ? 'disabled' : ''}><span>Code actif${mon ? ' (le tien, toujours actif)' : ''}</span></label></article>`;
   }).join('');
-  return `<span class="mono">Superviseur</span><h3>Réglages</h3>
+  return `<span class="mono">${esc(ROLES[roleId].nom)}</span><h3>Réglages</h3>
     <p class="dnote">Les codes sont gardés sur le serveur et ne sont jamais lisibles. Pour en changer un, tape le nouveau code et appuie sur « Changer ». Désactive un code si la personne part.</p>${lignes}`;
 }
 async function ouvrirReglages() {
@@ -1101,7 +1114,7 @@ function tutoVu() { try { return localStorage.getItem('pilotage-tuto-' + roleId)
 function finTuto() { const t = document.getElementById('tour'); if (t) t.remove(); try { localStorage.setItem('pilotage-tuto-' + roleId, '1'); } catch (e) {} }
 function lancerTuto() {
   if (!roleId || reunion) return;
-  const sup = roleId === 'superviseur';
+  const sup = estSup();
   tourEtapes = [
     { sel: '.rail', titre: 'Les ronds', texte: 'Chaque rond est un pôle. Clique sur l\'un d\'eux pour voir ses onglets juste en dessous. Reste appuyé dessus : il tourne comme une pièce et tu peux le déplacer.' },
     { sel: '.pps', titre: 'Les onglets', texte: 'Ici, les onglets du pôle choisi. Un clic ouvre la page.' },
@@ -1376,7 +1389,7 @@ function courant() {
 /* Onglets où quelqu'un est connecté, visibles seulement par le superviseur. */
 function vivants() {
   const s = new Set();
-  if (roleId !== 'superviseur') return s;
+  if (!estSup()) return s;
   Object.entries(presence).forEach(([role, tab]) => { if (tab) { s.add(tab); if (PERSONNE[role]) s.add(PERSONNE[role]); } });
   return s;
 }
@@ -1450,7 +1463,7 @@ function renderApp() {
 
   const info = GROUPES.flatMap(g => g.onglets).find(o => o.id === cur);
   const groupe = GROUPES.find(g => g.onglets.some(o => o.id === cur));
-  const sup = roleId === 'superviseur';
+  const sup = estSup();
   const libelleScope = r.resto ? RESTOS[r.resto] : (scope === 'tous' ? 'Les 3 restaurants' : RESTOS[scope]);
   const vifs = vivants();
   const aRobot = r.onglets.some(t => etat(t).robot > 0), aAlerte = r.onglets.some(t => etat(t).alerte > 0), aVivant = vifs.size > 0;
@@ -1472,7 +1485,7 @@ function renderApp() {
   const poles = GROUPES.map(g => ({ g, liste: g.onglets.filter(o => r.onglets.includes(o.id)) })).filter(p => p.liste.length);
   const ordP = ordresPoles[roleId];
   if (ordP) poles.sort((a, b) => { const ia = ordP.indexOf(a.g.id), ib = ordP.indexOf(b.g.id); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
-  const INI = { ops: 'OPS', rh: 'RH', maint: 'M/IT', equipe: 'EQ', form: 'F' };
+  const INI = { ops: 'OPS', rh: 'RH', maint: 'M/IT', equipe: 'EQ', form: 'F', rhadm: 'RHA' };
   const rail = poles.map(p => {
     const open = p.g.id === ouvert, has = p.g.id === groupe.id, live = p.liste.some(o => vifs.has(o.id));
     const tot = p.liste.reduce((t, o) => ({ robot: t.robot + etat(o.id).robot, alerte: t.alerte + etat(o.id).alerte }), { robot: 0, alerte: 0 });
