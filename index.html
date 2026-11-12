@@ -308,7 +308,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .evt { border-left: 3px solid var(--e); }
 .pr { display: none; }
 .footwrap .foot { display: grid; grid-template-columns: 1fr 1fr; }
-.footwrap #printbtn, .footwrap #notifbtn { grid-column: 1 / -1; }
+.footwrap #notifbtn { grid-column: 1 / -1; }
 
 @media print {
   :root, :root[data-theme="dark"], :root:not([data-theme="light"]) { --bg: #fff; --panel: #fff; --panel-2: #f1f3f6; --line: #c9d0db; --fg: #111; --muted: #555; --grid: transparent; --halo: transparent; }
@@ -1402,7 +1402,7 @@ function renderApp() {
       <div class="rail" role="group" aria-label="Pôles">${rail}</div>
       ${legende}
       <div class="pps">${nav}</div>
-      <div class="footwrap"><button class="out" id="out">Changer de code</button><div class="foot"><button class="themebtn" id="reubtn">Mode réunion</button><button class="themebtn" id="themebtn">${THEMES[theme]}</button><button class="themebtn" id="printbtn">Version imprimable</button><button class="themebtn" id="notifbtn">${notifLabel()}</button></div></div>
+      <div class="footwrap"><div class="foot"><button class="themebtn" id="reubtn">Mode réunion</button><button class="themebtn" id="themebtn">${THEMES[theme]}</button><button class="themebtn" id="notifbtn">${notifLabel()}</button></div></div>
       </div>
     </nav>
     <main class="main${anim ? ' enter' : ''}">
@@ -1498,10 +1498,8 @@ function renderApp() {
   }));
   const rg = document.getElementById('regbtn'); if (rg) rg.addEventListener('click', ouvrirReglages);
   document.getElementById('notifbtn').addEventListener('click', activerNotifs);
-  document.getElementById('printbtn').addEventListener('click', () => { try { window.print(); } catch (e) {} });
   root.querySelectorAll('[data-jour]').forEach(b => b.addEventListener('click', () => ouvrirJour(b.dataset.jour)));
   if (reunion) majHorloge();
-  document.getElementById('out').addEventListener('click', sortir);
 }
 
 /* Bulle sous la souris dans les éléments cliquables. */
