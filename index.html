@@ -53,17 +53,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .login { min-height: calc(100vh - 80px); display: grid; place-items: center; }
 .login-box { width: min(440px, 100%); display: grid; gap: 22px; }
 .login-box { position: relative; }
-.login-box > :not(.lanim) { transition: opacity .3s; }
-.login-box.sombre > :not(.lanim) { opacity: .12; }
+.login-box > :not(.lanim) { transition: opacity .35s; }
+.login-box.cache > :not(.lanim) { opacity: 0; }
 .login-box.enroute .mark i { visibility: hidden; }
 .lanim { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; z-index: 5; }
+.lanim .lt { fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; color: var(--ora); opacity: 0; transition: opacity .3s, color .25s; }
+.lanim .lt.ok, .lanim .lr.ok, .lanim .lg.ok { color: var(--live); }
+.lanim .lt.ko, .lanim .lr.ko, .lanim .lg.ko { color: var(--rvif); }
 .lanim .lr { color: var(--ora); transition: color .25s; filter: drop-shadow(0 0 6px currentColor); }
-.lanim .lr.ok { color: var(--live); }
-.lanim .lr.ko { color: var(--rvif); }
-.lanim .lm { fill: none; stroke: currentColor; stroke-width: 9; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 8px currentColor); transition: color .25s; }
-.lanim .lm.ok { color: var(--live); }
-.lanim .lm.ko { color: var(--rvif); }
-.lanim .lm.bleu { color: #7cc4ff; }
+.lanim .lg { color: var(--ora); transition: color .25s; filter: drop-shadow(0 0 10px currentColor); }
+.lanim .lg.bleu { color: #7cc4ff; }
 .lanim .lp circle { fill: var(--rvif); }
 .mark { display: flex; align-items: center; gap: 12px; }
 .mark i { width: 14px; height: 14px; border: 2px solid var(--accent); border-radius: 50%; position: relative; flex: none; box-shadow: 0 0 18px var(--glow); }
@@ -1471,101 +1470,134 @@ const easeIn = k => k * k;
 const easeBack = k => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2); };
 function svgEl(nom, attrs, parent) { const e = document.createElementNS('http://www.w3.org/2000/svg', nom); Object.entries(attrs || {}).forEach(([k, v]) => e.setAttribute(k, v)); if (parent) parent.appendChild(e); return e; }
 
-/* Lance l'animation : le rond passe à l'orange et tourne autour du bloc. Renvoie des commandes pour la suite. */
+/* Logo officiel : les arches jaunes de icones/logo-officiel.png, détourées une fois (blanc sur transparent) pour pouvoir les colorer. */
+let logoM = null;
+function chargerLogoM() {
+  if (logoM) return logoM;
+  logoM = new Promise(res => {
+    const im = new Image();
+    im.onload = () => {
+      try {
+        const n = im.naturalWidth, c = document.createElement('canvas'); c.width = c.height = n;
+        const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(im, 0, 0);
+        const d = x.getImageData(0, 0, n, n), p = d.data; let x0 = n, y0 = n, x1 = 0, y1 = 0;
+        for (let i = 0; i < p.length; i += 4) {
+          const a = Math.max(0, Math.min(1, (p[i] - 60) / 140)) * (p[i + 3] / 255);   /* jaune : rouge élevé ; fond vert : rouge bas */
+          p[i] = p[i + 1] = p[i + 2] = 255; p[i + 3] = Math.round(a * 255);
+          if (a > .5) { const k = i / 4, px = k % n, py = (k / n) | 0; if (px < x0) x0 = px; if (px > x1) x1 = px; if (py < y0) y0 = py; if (py > y1) y1 = py; }
+        }
+        x.putImageData(d, 0, 0);
+        const w = x1 - x0 + 1, h = y1 - y0 + 1, c2 = document.createElement('canvas'); c2.width = w; c2.height = h;
+        const x2 = c2.getContext('2d', { willReadFrequently: true }); x2.drawImage(c, x0, y0, w, h, 0, 0, w, h);
+        const q = x2.getImageData(0, 0, w, h).data, pix = [];
+        for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) if (q[(yy * w + xx) * 4 + 3] > 128) pix.push([xx, yy]);
+        res({ url: c2.toDataURL('image/png'), w, h, pix });
+      } catch (e) { res(null); }
+    };
+    im.onerror = () => res(null);
+    im.src = 'icones/logo-officiel.png';
+  });
+  return logoM;
+}
+
+/* Lance l'animation : le rond passe à l'orange, quitte sa place et tourne en cercle net autour du bloc. */
 function animLoginDemarrer(box) {
-  const W = box.offsetWidth, H = box.offsetHeight, m = 12, rr = 26, x0 = -m, y0 = -m, w = W + 2 * m, h = H + 2 * m;
-  const home = (() => { const b = box.getBoundingClientRect(), i = box.querySelector('.mark i').getBoundingClientRect(); return { x: i.left - b.left + i.width / 2, y: i.top - b.top + i.height / 2 }; })();
+  chargerLogoM();
+  const W = box.offsetWidth, H = box.offsetHeight, bb = box.getBoundingClientRect(), cx = W / 2, cy = H / 2;
+  let R = Math.hypot(W / 2, H / 2) + 26;
+  R = Math.max(60, Math.min(R, bb.left + cx - 8, innerWidth - (bb.left + cx) - 8, bb.top + cy - 8, innerHeight - (bb.top + cy) - 8));
+  const home = (() => { const i = box.querySelector('.mark i').getBoundingClientRect(); return { x: i.left - bb.left + i.width / 2, y: i.top - bb.top + i.height / 2 }; })();
   const svg = svgEl('svg', { class: 'lanim', width: W, height: H, 'aria-hidden': 'true' }, box);
-  const d = `M${x0 + rr},${y0} H${x0 + w - rr} A${rr},${rr} 0 0 1 ${x0 + w},${y0 + rr} V${y0 + h - rr} A${rr},${rr} 0 0 1 ${x0 + w - rr},${y0 + h} H${x0 + rr} A${rr},${rr} 0 0 1 ${x0},${y0 + h - rr} V${y0 + rr} A${rr},${rr} 0 0 1 ${x0 + rr},${y0} Z`;
-  const piste = svgEl('path', { d, fill: 'none', stroke: 'none' }, svg), Lp = piste.getTotalLength();
-  const Lr = (w - 2 * rr) + Math.PI * rr / 2 + (h - 2 * rr) / 2;      /* milieu du côté droit */
-  const cx = W - 54, cy = H / 2;                                         /* centre du M */
-  const mp = svgEl('path', { class: 'lm', d: 'M-32,28 V-4 C-32,-28 -4,-28 0,-2 C4,-28 32,-28 32,-4 V28', transform: `translate(${cx},${cy})` }, svg);
-  const Lm = mp.getTotalLength(); mp.style.strokeDasharray = Lm; mp.style.strokeDashoffset = Lm; mp.style.opacity = 0;
+  const C = 2 * Math.PI * R, tailK = .26;
+  const tail = svgEl('circle', { class: 'lt', cx, cy, r: R, 'stroke-dasharray': `${C * tailK} ${C}` }, svg);
   const g = svgEl('g', { class: 'lr ora' }, svg);
   svgEl('circle', { r: 6, fill: 'none', stroke: 'currentColor', 'stroke-width': 2 }, g); svgEl('circle', { r: 3.6, fill: 'currentColor' }, g);
   const pos = { x: home.x, y: home.y }, place = (x, y) => { pos.x = x; pos.y = y; g.setAttribute('transform', `translate(${x},${y})`); };
+  const polaire = th => ({ x: cx + R * Math.cos(th), y: cy + R * Math.sin(th) });
   place(home.x, home.y);
   box.classList.add('enroute');
-  const etat = { fin: false, ok: false, s: 0, pret: null };
-  const pt = s => piste.getPointAtLength(((s % Lp) + Lp) % Lp);
+  const th0 = Math.atan2(home.y - cy, home.x - cx), etat = { fin: false, th: th0 };
   const lance = (async () => {
-    const p0 = pt(0);
-    await tween(280, k => place(home.x + (p0.x - home.x) * k, home.y + (p0.y - home.y) * k), easeIO);
-    let t = performance.now(), cible = null;
+    const p0 = polaire(th0);
+    await tween(300, k => place(home.x + (p0.x - home.x) * k, home.y + (p0.y - home.y) * k), easeIO);
+    tail.style.opacity = .55;
+    let t = performance.now();
     await new Promise(res => {
       (function boucle(now) {
-        etat.s += (now - t) / (1500 * animVit) * Lp; t = now;
-        if (etat.fin) {
-          if (cible === null) cible = etat.s <= Lr ? Lr : Lr + Lp * Math.ceil((etat.s - Lr) / Lp);
-          if (etat.s >= cible) { const p = pt(Lr); place(p.x, p.y); return res(); }
-        }
-        const p = pt(etat.s); place(p.x, p.y); requestAnimationFrame(boucle);
+        etat.th += (now - t) / (1500 * animVit) * 2 * Math.PI; t = now;
+        const p = polaire(etat.th); place(p.x, p.y);
+        tail.setAttribute('transform', `rotate(${etat.th * 180 / Math.PI - 360 * tailK} ${cx} ${cy})`);
+        if (etat.fin) return res();
+        requestAnimationFrame(boucle);
       })(t);
     });
-    return { cx, cy, Lm, mp, g, place, pos, home, W, H };
+    return true;
   })();
-  const nettoyer = () => { svg.remove(); box.classList.remove('enroute', 'sombre'); };
-  return { etat, lance, nettoyer, svg, box };
+  const nettoyer = () => { svg.remove(); box.classList.remove('enroute', 'cache'); };
+  return { etat, lance, nettoyer, svg, box, g, tail, place, pos, cx, cy, W, H };
 }
 
-/* Suite de l'animation, une fois la réponse du serveur reçue. */
+/* Suite : réponse reçue. Rond vert ou rouge, le bloc disparaît, le vrai M se forme au centre, puis il entre (bleu, grossit) ou s'effondre. */
 async function animLoginFinir(a, ok, onBleu, message) {
-  a.etat.fin = true; a.etat.ok = ok;
-  const col = ok ? 'ok' : 'ko', box = a.box;
-  const c = await a.lance, { cx, cy, Lm, mp, g, place, pos, home } = c;
-  g.setAttribute('class', 'lr ' + col); box.classList.add('sombre');
-  mp.setAttribute('class', 'lm ' + col); mp.style.opacity = 1;
-  const pen = k => { const p = mp.getPointAtLength(Lm * k); return { x: cx + p.x, y: cy + p.y }; };
+  const col = ok ? 'ok' : 'ko', { box, svg, g, tail, place, pos, cx, cy, W } = a;
+  a.etat.fin = true; g.setAttribute('class', 'lr ' + col); tail.setAttribute('class', 'lt ' + col);
+  await a.lance;
+  tail.style.opacity = 0; box.classList.add('cache');
   const dep = { x: pos.x, y: pos.y };
-  const p0 = pen(0);
-  await tween(160, k => place(dep.x + (p0.x - dep.x) * k, dep.y + (p0.y - dep.y) * k), easeIO);
-  await tween(650, k => { mp.style.strokeDashoffset = Lm * (1 - k); const p = pen(k); place(p.x, p.y); }, easeIO);
-  const fin = pen(1);
-  await tween(520, k => place(fin.x + (home.x - fin.x) * k, fin.y + (home.y - fin.y) * k), easeBack);   /* rebond : le rond se remet à sa place */
+  await tween(480, k => place(dep.x + (cx - dep.x) * k, dep.y + (cy - dep.y) * k), easeIO);
   g.style.opacity = 0; box.classList.remove('enroute');
+  const lm = await chargerLogoM();
+  if (!lm) { box.classList.remove('cache'); if (!ok) { const e = document.getElementById('err'); e.textContent = message; } return; }
+  const Lw = Math.min(150, W * .45), Lh = Lw * lm.h / lm.w;
+  const defs = svgEl('defs', {}, svg), mk = svgEl('mask', { id: 'lmmask', maskUnits: 'userSpaceOnUse', x: -Lw / 2, y: -Lh / 2, width: Lw, height: Lh }, defs);
+  svgEl('image', { href: lm.url, x: -Lw / 2, y: -Lh / 2, width: Lw, height: Lh }, mk);
+  const lg = svgEl('g', { class: 'lg ' + col, transform: `translate(${cx},${cy}) scale(.5)` }, svg); lg.style.opacity = 0;
+  svgEl('rect', { x: -Lw / 2, y: -Lh / 2, width: Lw, height: Lh, fill: 'currentColor', mask: 'url(#lmmask)' }, lg);
+  const echelle = s => lg.setAttribute('transform', `translate(${cx},${cy}) scale(${s})`);
+  await tween(520, k => { echelle(.5 + .5 * easeBack(k)); lg.style.opacity = Math.min(1, k * 4); });
   if (ok) {
-    mp.setAttribute('class', 'lm bleu'); onBleu && onBleu();
-    await attendre(220);
-    await tween(420, k => { const s = 1 + .22 * Math.sin(k * Math.PI); mp.setAttribute('transform', `translate(${cx},${cy}) scale(${s})`); });
-    await tween(520, k => { mp.setAttribute('transform', `translate(${cx},${cy}) scale(${1 + 9 * k})`); mp.style.opacity = 1 - k; }, easeIn);
+    await attendre(260);
+    lg.setAttribute('class', 'lg bleu'); onBleu && onBleu();
+    await attendre(420);
+    await tween(520, k => { echelle(1 + 8 * k); lg.style.opacity = 1 - k; }, easeIn);
     return;
   }
-  await animLoginEffondrement(a, c, message);
+  await attendre(420);
+  await animLoginEffondrement(a, lm, { cx, cy, Lw, Lh, lg }, message);
 }
 
 /* Le M rouge s'effondre : ses morceaux retombent et forment la phrase d'erreur. */
-async function animLoginEffondrement(a, c, message) {
-  const { cx, cy, Lm, mp } = c, box = a.box, err = document.getElementById('err'), svg = a.svg;
+async function animLoginEffondrement(a, lm, M, message) {
+  const { cx, cy, Lw, Lh, lg } = M, box = a.box, err = document.getElementById('err'), svg = a.svg;
   const bb = box.getBoundingClientRect(), er = err.getBoundingClientRect(), cs = getComputedStyle(err);
-  const cv = document.createElement('canvas'), ctx = cv.getContext('2d');
-  ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  const cv = document.createElement('canvas'), ctx = cv.getContext('2d', { willReadFrequently: true }), police = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  ctx.font = police;
   const tw = Math.ceil(ctx.measureText(message).width) + 4, th = Math.ceil(parseFloat(cs.fontSize) * 1.5);
-  cv.width = tw; cv.height = th; ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`; ctx.textBaseline = 'middle'; ctx.fillStyle = '#000'; ctx.fillText(message, 0, th / 2);
+  cv.width = tw; cv.height = th; ctx.font = police; ctx.textBaseline = 'middle'; ctx.fillStyle = '#000'; ctx.fillText(message, 0, th / 2);
   const dat = ctx.getImageData(0, 0, tw, th).data, cibles = [];
   for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) if (dat[(y * tw + x) * 4 + 3] > 110) cibles.push([x, y]);
-  const N = Math.min(cibles.length, 460), choisis = cibles.sort(() => Math.random() - .5).slice(0, N);
-  const ox = er.left - bb.left, oy = er.top - bb.top + (er.height - th) / 2, sol = oy + th / 2;
+  cibles.sort(() => Math.random() - .5);
+  const N = 700, ox = er.left - bb.left, oy = er.top - bb.top + (er.height - th) / 2, sol = oy + th / 2;
   const groupe = svgEl('g', { class: 'lp' }, svg);
-  const ps = choisis.map(([tx, ty], i) => {
-    const q = mp.getPointAtLength(Lm * Math.random()), el = svgEl('circle', { r: 2.5 }, groupe);
-    const sx = cx + q.x + (Math.random() - .5) * 7, sy = cy + q.y + (Math.random() - .5) * 7;
-    return { el, sx, sy, mx: sx + (Math.random() - .5) * 26, my: sol + (Math.random() - .5) * 10, tx: ox + tx, ty: oy + ty, dl: (1 - (sy - (cy - 26)) / 56) * 200 + Math.random() * 90, dt: (tx / tw) * 320 + Math.random() * 120 };
+  const ps = Array.from({ length: N }, (_, i) => {
+    const [px, py] = lm.pix[(Math.random() * lm.pix.length) | 0], [tx, ty] = cibles.length ? cibles[i % cibles.length] : [0, 0];
+    const sx = cx + (px / lm.w - .5) * Lw, sy = cy + (py / lm.h - .5) * Lh, el = svgEl('circle', { r: 2.3, cx: sx, cy: sy }, groupe);
+    return { el, sx, sy, mx: sx + (Math.random() - .5) * 30, my: sol + (Math.random() - .5) * 10, tx: ox + tx + (Math.random() - .5) * .6, ty: oy + ty + (Math.random() - .5) * .6, dl: (1 - py / lm.h) * 220 + Math.random() * 90, dt: (tx / tw) * 320 + Math.random() * 120 };
   });
-  mp.style.opacity = 0;
-  const T1 = 560, T2 = 620, tot = T1 + T2 + 520, t0 = performance.now();
+  lg.style.opacity = 0; box.classList.remove('cache');
+  const T1 = 560, T2 = 620, fin = 220 + 90 + T1 + 320 + 120 + T2 + 40, t0 = performance.now();
   await new Promise(res => (function f(now) {
     const e = (now - t0) / animVit;
     ps.forEach(p => {
       let x, y, r;
-      if (e < p.dl) { x = p.sx; y = p.sy; r = 2.5; }
-      else if (e < p.dl + T1) { const k = easeIn((e - p.dl) / T1); x = p.sx + (p.mx - p.sx) * k; y = p.sy + (p.my - p.sy) * k; r = 2.5; }
-      else { const k = Math.min(1, Math.max(0, (e - p.dl - T1 - p.dt) / T2)), kk = easeIO(k); x = p.mx + (p.tx - p.mx) * kk; y = p.my + (p.ty - p.my) * kk; r = 2.5 - 1.6 * kk; }
+      if (e < p.dl) { x = p.sx; y = p.sy; r = 2.3; }
+      else if (e < p.dl + T1) { const k = easeIn((e - p.dl) / T1); x = p.sx + (p.mx - p.sx) * k; y = p.sy + (p.my - p.sy) * k; r = 2.3; }
+      else { const k = Math.min(1, Math.max(0, (e - p.dl - T1 - p.dt) / T2)), kk = easeIO(k); x = p.mx + (p.tx - p.mx) * kk; y = p.my + (p.ty - p.my) * kk; r = 2.3 - 1.5 * kk; }
       p.el.setAttribute('cx', x); p.el.setAttribute('cy', y); p.el.setAttribute('r', r);
     });
-    if (e < 200 + 90 + T1 + 320 + 120 + T2 + 40) requestAnimationFrame(f); else res();
+    if (e < fin) requestAnimationFrame(f); else res();
   })(t0));
-  err.textContent = message; err.style.opacity = 0; box.classList.remove('sombre');
+  err.textContent = message; err.style.opacity = 0;
   await tween(260, k => { err.style.opacity = k; groupe.style.opacity = 1 - k; });
 }
 
