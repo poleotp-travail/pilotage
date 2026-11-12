@@ -487,13 +487,6 @@ body.glisse, body.glisse * { cursor: grabbing !important; user-select: none; }
   .pos i.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
   .pos span { margin-left: 6px; }
 }
-@keyframes glisseD { from { opacity: 0; transform: translateX(-46px); } }
-@keyframes glisseG { from { opacity: 0; transform: translateX(46px); } }
-@keyframes rebond2 { 30% { transform: translateX(10px); } 60% { transform: translateX(-6px); } }
-#dbody.gd { animation: glisseD .32s cubic-bezier(.2, .8, .2, 1); }
-#dbody.gg { animation: glisseG .32s cubic-bezier(.2, .8, .2, 1); }
-#dbody.rb2 { animation: rebond2 .28s ease; }
-@media (prefers-reduced-motion: reduce) { #dbody.gd, #dbody.gg, #dbody.rb2 { animation: none; } }
 </style>
 </head><body>
 
@@ -769,10 +762,7 @@ function posHtml(info, nom) {
   if (lst.length < 2 || i < 0) return '';
   return '<div class="pos mono" aria-hidden="true">' + lst.map((x, j) => '<i class="' + (j === i ? 'on' : '') + '"></i>').join('') + '<span>' + (i + 1) + ' / ' + lst.length + '</span></div>';
 }
-function animerCorps(classe) {
-  const c = document.getElementById('dbody'); c.classList.remove('gd', 'gg', 'rb2'); void c.offsetWidth; c.classList.add(classe);
-  setTimeout(() => c.classList.remove(classe), 400);
-}
+function animerCorps() {}
 function passerCase(sens) {
   if (!panneau || !panneau.tabId) return;
   const lst = ordreCases(infoTab(panneau.tabId)), i = lst.indexOf(panneau.nom), j = i + sens;
