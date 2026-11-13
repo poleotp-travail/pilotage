@@ -561,7 +561,7 @@ const GROUPES = [
     { id: 'clients', nom: 'Clients', resp: 'EDITH', prevu: ['Temps de service', 'Hello McDo', 'Avis Google', 'Affluence'] },
     { id: 'organisation', nom: 'Organisation', resp: 'KAREN', prevu: ['Planning', 'Agenda', 'Tâches planifiées'] },
     { id: 'financier', nom: 'Financier', resp: 'PEPPER', prevu: ['Chiffre d’affaires', 'Pertes', 'Inventaire de fin de mois'] },
-    { id: 'bilans', nom: 'Bilans', resp: 'HOMER', prevu: ['Hebdomadaire', 'Mensuel', 'Trimestriel', 'Annuel'] },
+    { id: 'bilans', nom: 'Bilans', resp: 'HOMER', prevu: ['Bilan de la veille', 'Bilan de la semaine dernière', 'Bilan du mois dernier', 'Impact sur l’affluence'] },
     { id: 'secu', nom: 'Sécurité alimentaire', resp: 'BENOIT', prevu: ['Rapport DSA', 'Connexions Sirius'] },
     { id: 'fdm', nom: 'FDM', resp: 'PEPPER', prevu: ['Inventaire de fin de mois', 'Écart statistique', 'Marge théorique'] }
   ]},
@@ -934,7 +934,7 @@ const PROFILS = {
   'Inventaire de fin de mois': { unit: ' €', dec: 0, obj: 0, sans: true, sens: 'haut', plage: [14200, 18400] },
   'Chiffre d’affaires': { unit: ' €', dec: 0, obj: 0, sans: true, sens: 'haut', plage: [8500, 13000], echelle: true },
   'Affluence': { unit: ' clients', dec: 0, obj: 0, sans: true, sens: 'haut', plage: [1100, 1800], echelle: true },
-  'Hebdomadaire': { sans: true }, 'Mensuel': { sans: true }, 'Trimestriel': { sans: true }, 'Annuel': { sans: true }
+  'Bilan de la veille': { sans: true }, 'Bilan de la semaine dernière': { sans: true }, 'Bilan du mois dernier': { sans: true }, 'Impact sur l’affluence': { sans: true }
 };
 function fmtDec(n, d) { return n.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }); }
 function fmtO(n, e) { return e.dec == null ? fmtNum(n) : fmtDec(n, e.dec) + (e.unit || ''); }
