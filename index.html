@@ -562,7 +562,8 @@ const GROUPES = [
     { id: 'organisation', nom: 'Organisation', resp: 'KAREN', prevu: ['Planning', 'Agenda', 'Tâches planifiées'] },
     { id: 'financier', nom: 'Financier', resp: 'PEPPER', prevu: ['Chiffre d’affaires', 'Pertes', 'Inventaire de fin de mois'] },
     { id: 'bilans', nom: 'Bilans', resp: 'HOMER', prevu: ['Hebdomadaire', 'Mensuel', 'Trimestriel', 'Annuel'] },
-    { id: 'secu', nom: 'Sécurité alimentaire', resp: 'BENOIT', prevu: ['Rapport DSA', 'Connexions Sirius'] }
+    { id: 'secu', nom: 'Sécurité alimentaire', resp: 'BENOIT', prevu: ['Rapport DSA', 'Connexions Sirius'] },
+    { id: 'fdm', nom: 'FDM', resp: 'PEPPER', prevu: ['Inventaire de fin de mois', 'Rapport de consommation', 'Écarts à vérifier'] }
   ]},
   { id: 'rh', nom: 'RH', onglets: [
     { id: 'turnover', nom: 'Turnover', resp: 'RH', prevu: ['Départs et arrivées', 'Signatures'] },
@@ -599,9 +600,9 @@ const ROLES = {
   superviseur: { nom: 'Superviseur', onglets: TOUS.filter(t => !ONGLETS_PRIVES.includes(t)), resto: null },
   franchise: { nom: 'Franchisé', onglets: TOUS.filter(t => !['alice', 'emilie', 'theo', 'madison'].includes(t)), resto: null },
   rhadmin: { nom: 'RH administratif', onglets: ['rhadmin'], resto: null },
-  dir905: { nom: 'Directeur Rognac', resto: '905', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'bilans'] },
-  dir525: { nom: 'Directeur Craux', resto: '525', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'bilans'] },
-  dir649: { nom: 'Directeur Cognets', resto: '649', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'bilans'] },
+  dir905: { nom: 'Directeur Rognac', resto: '905', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'fdm', 'bilans'] },
+  dir525: { nom: 'Directeur Craux', resto: '525', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'fdm', 'bilans'] },
+  dir649: { nom: 'Directeur Cognets', resto: '649', provisoire: true, onglets: ['chiffres', 'clients', 'financier', 'secu', 'fdm', 'bilans'] },
   formation: { nom: 'Formation', resto: null, onglets: ['formation'] },
   it: { nom: 'IT et maintenance', resto: null, onglets: ['maintenance', 'pep', 'services', 'it', 'robots'] },
   rh: { nom: 'RH opérationnel', resto: null, onglets: ['turnover', 'atterrissage', 'personnel'] },
