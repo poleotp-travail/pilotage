@@ -648,7 +648,7 @@ function destinataires() { return rolesVisibles().filter(k => k !== 'superviseur
 const root = document.getElementById('root');
 let roleId = null, scope = 'tous', presence = {}, lastKey = null, lastBrand = null, ouvert = null, panneau = null, comparer = 'prev', periode = 'sem', jourRef = null;
 /* ---------- Réseau : l'état partagé (consignes, messages, objectifs, ordres, codes) vit sur le serveur Apps Script ---------- */
-const SERVEUR = 'https://script.google.com/macros/s/AKfycbwpt09b3QU-jszkK0UqQ3vjewwLNocu8yBoYKxNz2kwFN5T9fjN_n75IWoCVmcdtEHg/exec';
+const SERVEUR = 'https://script.google.com/macros/s/AKfycbyQlN9gNr8xPj1nqFVghlqnHNLTUGAU4K0jfy0br68ne0uLIFwqCcfWwLQmTST79Z7o/exec';
 const CLES_PARTAGEES = ['pilotage-consignes', 'pilotage-notes', 'pilotage-com', 'pilotage-obj', 'pilotage-ordre', 'pilotage-poles', 'pilotage-mod'];
 let jeton = null, regInfos = [], pollTimer = null, fileEnvoi = Promise.resolve();
 let horsLigne = false, derniereSync = 0, echecEnvoi = false;
@@ -1618,7 +1618,7 @@ let noClickRail = 0;
 
 /* ---------- Notifications (Web Push) : le téléphone envoie son abonnement au serveur Apps Script ---------- */
 const PUSH_CLE_PUBLIQUE = 'BA48yWbPJknHUSfBdL_sNAPK0lw44OGsdDDxyjyYfu_q9M2u37J2YBFBy8G7TNugOwrDScgMHkEgktaBcQLWT2E';
-const PUSH_SERVEUR = 'https://script.google.com/macros/s/AKfycbwpt09b3QU-jszkK0UqQ3vjewwLNocu8yBoYKxNz2kwFN5T9fjN_n75IWoCVmcdtEHg/exec';
+const PUSH_SERVEUR = 'https://script.google.com/macros/s/AKfycbyQlN9gNr8xPj1nqFVghlqnHNLTUGAU4K0jfy0br68ne0uLIFwqCcfWwLQmTST79Z7o/exec';
 let etatNotif = '';
 function surIphone() { return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
 function installee() { return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; }
