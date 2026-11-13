@@ -536,6 +536,9 @@ body.glisse, body.glisse * { cursor: grabbing !important; user-select: none; }
 .qchk { stroke: var(--bg); stroke-width: 2.4; stroke-dasharray: 100; stroke-dashoffset: 100; }
 .qrow:hover .qbase { opacity: 1; stroke: var(--accent); }
 .qrow input:focus-visible + .qsvg { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 50%; }
+.bilan-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.bilgrand { font-size: 20px; font-weight: 400; }
+.bilanframe { width: 100%; height: 66vh; min-height: 360px; border: 1px solid var(--line); border-radius: 16px; background: #0b0e14; }
 /* iPhone : un champ dont le texte fait moins de 16 px déclenche un zoom automatique à la saisie. */
 @media (max-width: 700px) { input, select, textarea { font-size: 16px !important; } }
 </style>
@@ -879,8 +882,73 @@ function passerCase(sens) {
   }, { passive: true });
 })();
 
+/* ---------- Onglet Bilans : bilans à la demande et prévisions d'affluence ---------- */
+let bilanMeta = null;
+const BILAN_TYPE = { 'Bilan de la veille': 'veille', 'Bilan de la semaine dernière': 'semaine', 'Bilan du mois dernier': 'mois', 'Impact sur l’affluence': 'affluence' };
+const NOMS_PARTS = { global: 'Les 3 restos', '905': 'Rognac', '525': 'Craux', '649': 'Cognets' };
+function fmtQuand(t) { const d = new Date(t); return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) + ' à ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); }
+async function chargerBilanMeta() {
+  if (bilanMeta === undefined || !roleId) return;
+  bilanMeta = bilanMeta || {};
+  const r = await appel({ a: 'bilanmeta' });
+  if (r && r.ok) { bilanMeta = r.meta || {}; if (roleId && courant() === 'bilans' && !panneau) renderApp(); }
+}
+function carteBilan(nom, pos) {
+  const ty = BILAN_TYPE[nom], m = bilanMeta && bilanMeta[ty], aff = ty === 'affluence';
+  const grand = aff ? 'Les 7 prochains jours' : (m ? esc(m.label) : 'À générer');
+  const fres = aff ? 'météo, fériés, vacances, grèves' : (m ? 'généré le ' + fmtQuand(m.t) : 'pas encore généré');
+  return `<article class="mod clic" tabindex="0" role="button" data-mod="${esc(nom)}" style="--i:${pos + 1}"><div><span class="mono pill">${aff ? 'Prévisions' : 'Bilan'}</span><h3>${esc(nom)}</h3></div><div class="val"><b class="bilgrand">${grand}</b></div><div class="foot2"><span class="mono">${esc(libelleScopeGlobal())}</span><span class="fresh">${fres}</span></div></article>`;
+}
+function htmlBilan(nom) {
+  const ty = BILAN_TYPE[nom], aff = ty === 'affluence';
+  return `${posHtml(infoTab('bilans'), nom)}<span class="mono">Opérations · Bilans</span><h3>${esc(nom)}</h3>
+    <div class="bilan-bar"><button class="btn small" id="bilangen">${aff ? 'Actualiser' : 'Générer'}</button><span class="mono" id="bilanetat"></span></div>
+    <div id="bilanparts" class="chips"></div>
+    <div id="bilancorps"><p class="empty">Chargement…</p></div>
+    <p class="dnote">${aff ? 'Météo, jours fériés, vacances scolaires et veille web (grèves, événements, travaux) pour les 7 prochains jours. La veille web se met à jour chaque jour et chaque dimanche à 18 h.' : 'Le bilan est calculé à partir des fichiers de suivi, sans IA : il ne coûte rien. La génération prend environ une minute.'}</p>`;
+}
+function htmlAffluence(r) {
+  if (!r.lignes.length) return '<p class="empty">Rien de particulier prévu dans les 7 prochains jours.</p>';
+  return r.lignes.map(l => `<article class="cs"><span class="mono">${l.ville ? esc(l.ville) : 'Rognac et Istres'}</span><p>${esc(l.texte)}</p></article>`).join('');
+}
+async function liaisonsBilan(nom) {
+  const ty = BILAN_TYPE[nom], aff = ty === 'affluence';
+  const corps = document.getElementById('bilancorps'), etat = document.getElementById('bilanetat'), btn = document.getElementById('bilangen'), choix = document.getElementById('bilanparts');
+  const ici = () => panneau && panneau.nom === nom && document.getElementById('bilancorps') === corps;
+  const montrer = (r) => {
+    if (r.vide) { corps.innerHTML = '<p class="empty">Pas encore généré. Appuie sur « Générer ».</p>'; etat.textContent = ''; choix.innerHTML = ''; return; }
+    etat.textContent = 'généré le ' + fmtQuand(r.t) + ' · ' + r.label;
+    const cles = ['global', '905', '525', '649'].filter(k => r.parts[k]);
+    const afficher = k => {
+      corps.innerHTML = `<iframe class="bilanframe" sandbox title="${esc(nom)}" srcdoc="${esc(r.parts[k])}"></iframe>`;
+      choix.querySelectorAll('[data-part]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.part === k)));
+    };
+    choix.innerHTML = cles.length > 1 ? cles.map(k => `<button class="chip" data-part="${k}" aria-pressed="false">${NOMS_PARTS[k]}</button>`).join('') : '';
+    choix.querySelectorAll('[data-part]').forEach(b => b.addEventListener('click', () => afficher(b.dataset.part)));
+    afficher(cles[0]);
+  };
+  const charger = async (force) => {
+    if (aff) {
+      const r = await appel(force ? { a: 'affluence', force: '1' } : { a: 'affluence' }); if (!ici()) return;
+      if (r && r.ok) { corps.innerHTML = htmlAffluence(r); etat.textContent = 'à jour : ' + fmtQuand(r.t); } else corps.innerHTML = '<p class="empty">' + (r && r.reseau ? 'Hors connexion.' : 'Impossible de charger.') + '</p>';
+      return;
+    }
+    const r = await appel({ a: 'bilanvoir', type: ty }); if (!ici()) return;
+    if (r && r.ok) montrer(r); else corps.innerHTML = '<p class="empty">' + (r && r.reseau ? 'Hors connexion.' : 'Impossible de charger.') + '</p>';
+  };
+  btn.addEventListener('click', async () => {
+    btn.disabled = true; etat.textContent = aff ? 'Actualisation…' : 'Génération en cours, environ une minute…';
+    if (aff) { await charger(true); btn.disabled = false; return; }
+    const r = await appel({ a: 'bilangen', type: ty });
+    btn.disabled = false;
+    if (r && r.ok) { bilanMeta = Object.assign(bilanMeta || {}, { [ty]: { t: r.t, label: r.label } }); if (ici()) await charger(); renderApp(); }
+    else if (ici()) etat.textContent = (r && r.reseau) ? 'Hors connexion.' : ((r && r.msg) || 'Échec de la génération.');
+  });
+  charger(false);
+}
 function ouvrirModule(nom, tabId) {
   panneau = { nom, tabId };
+  if (tabId === 'bilans') { ouvrirDrawer(htmlBilan(nom)); liaisonsBilan(nom); return; }
   ouvrirDrawer(htmlModule(nom, tabId)); liaisonsModule();
 }
 function liaisonsModule() {
@@ -1887,7 +1955,7 @@ function renderApp() {
       </header>
       ${htmlFrise()}
       <section class="modules" aria-label="Contenu de l'onglet">
-        ${ordreCases(info).map((p, pos) => { const i = info.prevu.indexOf(p); if (etatsSim.chargement) return `<article class="mod loading" aria-busy="true" style="--i:${pos + 1}"><div class="sk w40"></div><div class="sk w70 h30"></div><div class="sk w100 h30"></div><div class="sk w60"></div></article>`; if (etatsSim.manque[cle(info.id, p)]) return `<article class="mod clic nodata" tabindex="0" role="button" data-mod="${esc(p)}" style="--i:${pos + 1}"><div><span class="mono pill">Emplacement</span><h3>${esc(p)}</h3></div><div class="val"><b>—</b></div><div class="hatch"></div><div class="nd-lab"><i></i>Donnée non reçue</div><div class="foot2"><span class="mono">${esc(libelleScope)}</span><span class="fresh">aucune donnée</span></div></article>`; const e = exemple(p, info.id), o = objectifDe(info.id, p, e), st = statutObj(e.v, o), nc = (commentaires[cle(info.id, p)] || []).length, pct = Math.max(4, Math.min(100, Math.round((o.sens === 'bas' ? o.obj / e.v : e.v / o.obj) * 100))); return `<article class="mod clic${e.stale ? ' stale' : ''}" tabindex="0" role="button" data-mod="${esc(p)}" style="--i:${pos + 1}"><div><span class="mono pill">Emplacement</span><h3>${esc(p)}</h3></div><span class="ctr">${nc ? `<span class="ccount" title="${nc} message${nc > 1 ? 's' : ''}">${ICO_MSG}${nc}</span>` : ''}${badges(ac[i])}</span><div class="val"><b>${e.val}</b><span class="delta ${e.up ? 'up' : 'down'}" title="Écart par rapport à ${comparer === 'prev' ? 'la période précédente' : 'l\'an dernier'}">${e.up ? '▲' : '▼'} ${e.delta} <small>${libComp()}</small></span></div>${spark(e.serie, false, reperesDe(info.id, p, e.serie.length))}${e.sansObj && !objectifs[cle(info.id, p)] ? '<div class="obj"><span class="mono">Pas d\'objectif</span></div>' : `<div class="obj ${st}"><div class="bar"><i style="width:${pct}%"></i></div><span>Obj. ${fmtO(o.obj, e)} · <b>${LIBST[st]}</b></span></div>`}<div class="foot2"><span class="mono">${esc(libelleScope)}</span><span class="fresh">${e.fraicheur} · ${(() => { const rs = restosScope(), u = rs.length === 1 ? lienSource(p, rs[0]) : null; return u ? `<a class="src" href="${u}" target="_blank" rel="noopener" data-ext>fichier ↗</a>` : '<span class="src dim">fichier ↗</span>'; })()}</span></div></article>`; }).join('')}
+        ${ordreCases(info).map((p, pos) => { const i = info.prevu.indexOf(p); if (info.id === 'bilans' && !etatsSim.chargement) return carteBilan(p, pos); if (etatsSim.chargement) return `<article class="mod loading" aria-busy="true" style="--i:${pos + 1}"><div class="sk w40"></div><div class="sk w70 h30"></div><div class="sk w100 h30"></div><div class="sk w60"></div></article>`; if (etatsSim.manque[cle(info.id, p)]) return `<article class="mod clic nodata" tabindex="0" role="button" data-mod="${esc(p)}" style="--i:${pos + 1}"><div><span class="mono pill">Emplacement</span><h3>${esc(p)}</h3></div><div class="val"><b>—</b></div><div class="hatch"></div><div class="nd-lab"><i></i>Donnée non reçue</div><div class="foot2"><span class="mono">${esc(libelleScope)}</span><span class="fresh">aucune donnée</span></div></article>`; const e = exemple(p, info.id), o = objectifDe(info.id, p, e), st = statutObj(e.v, o), nc = (commentaires[cle(info.id, p)] || []).length, pct = Math.max(4, Math.min(100, Math.round((o.sens === 'bas' ? o.obj / e.v : e.v / o.obj) * 100))); return `<article class="mod clic${e.stale ? ' stale' : ''}" tabindex="0" role="button" data-mod="${esc(p)}" style="--i:${pos + 1}"><div><span class="mono pill">Emplacement</span><h3>${esc(p)}</h3></div><span class="ctr">${nc ? `<span class="ccount" title="${nc} message${nc > 1 ? 's' : ''}">${ICO_MSG}${nc}</span>` : ''}${badges(ac[i])}</span><div class="val"><b>${e.val}</b><span class="delta ${e.up ? 'up' : 'down'}" title="Écart par rapport à ${comparer === 'prev' ? 'la période précédente' : 'l\'an dernier'}">${e.up ? '▲' : '▼'} ${e.delta} <small>${libComp()}</small></span></div>${spark(e.serie, false, reperesDe(info.id, p, e.serie.length))}${e.sansObj && !objectifs[cle(info.id, p)] ? '<div class="obj"><span class="mono">Pas d\'objectif</span></div>' : `<div class="obj ${st}"><div class="bar"><i style="width:${pct}%"></i></div><span>Obj. ${fmtO(o.obj, e)} · <b>${LIBST[st]}</b></span></div>`}<div class="foot2"><span class="mono">${esc(libelleScope)}</span><span class="fresh">${e.fraicheur} · ${(() => { const rs = restosScope(), u = rs.length === 1 ? lienSource(p, rs[0]) : null; return u ? `<a class="src" href="${u}" target="_blank" rel="noopener" data-ext>fichier ↗</a>` : '<span class="src dim">fichier ↗</span>'; })()}</span></div></article>`; }).join('')}
       </section>
       ${legEtats ? `<div class="fleg mono">${legEtats}</div>` : ''}
       ${ordres[roleId + '|' + info.id] ? '<button class="cs-link" id="resetordre" style="justify-self:start">Remettre l\'ordre d\'origine</button>' : ''}
@@ -1904,6 +1972,7 @@ function renderApp() {
     </button>
   </div>`;
   ajusterSide();
+  if (info.id === 'bilans' && bilanMeta === null) chargerBilanMeta();
   root.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { location.hash = b.dataset.tab; }));
   root.querySelectorAll('[data-scope]').forEach(b => b.addEventListener('click', () => { scope = b.dataset.scope; renderApp(); }));
   root.querySelectorAll('.rb').forEach(b => b.addEventListener('click', () => {
