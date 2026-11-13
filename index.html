@@ -541,6 +541,15 @@ body.glisse, body.glisse * { cursor: grabbing !important; user-select: none; }
 .bilgrand { font-size: 20px; font-weight: 400; }
 .bilanframe { width: 100%; height: 66vh; min-height: 360px; border: 1px solid var(--line); border-radius: 16px; background: #0b0e14; }
 #drawer.large { width: min(780px, 100%); }
+.tableau { overflow-x: auto; }
+.liste { width: 100%; border-collapse: collapse; font-size: 13px; }
+.liste th, .liste td { padding: 7px 6px; text-align: right; border-bottom: 1px solid var(--line); vertical-align: top; }
+.liste th { font-family: var(--font-mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 400; }
+.liste .g { text-align: left; }
+.liste small { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+.liste tr.cat td { font-weight: 600; background: var(--panel-2); border-bottom: 0; }
+.liste tr.tot td { font-weight: 600; border-top: 2px solid var(--line); border-bottom: 0; }
+.liste td.ok { color: var(--live); } .liste td.lim { color: var(--warn); } .liste td.ko { color: var(--rvif); }
 /* iPhone : un champ dont le texte fait moins de 16 px déclenche un zoom automatique à la saisie. */
 @media (max-width: 700px) { input, select, textarea { font-size: 16px !important; } }
 </style>
@@ -845,6 +854,7 @@ function htmlModule(nom, tabId) {
     ${spark(e.serie, true, reperesDe(tabId, nom, e.serie.length))}
     ${e.sansObj && !objectifs[k] ? '<div class="obj"><span>Pas d\'objectif sur cette case.</span></div>' : `<div class="obj ${st}"><div class="bar"><i style="width:${pct}%"></i></div><span>Objectif ${fmtO(o.obj, e)} (${o.sens === 'bas' ? 'le plus bas possible' : 'le plus haut possible'}) · <b>${LIBST[st]}</b></span></div>`}
     ${sup ? `<form class="objform" id="objform"><input type="number" step="0.1" id="objv" value="${o.obj}" aria-label="Objectif"><select id="objs" aria-label="Sens"><option value="haut"${o.sens === 'haut' ? ' selected' : ''}>Plus haut = mieux</option><option value="bas"${o.sens === 'bas' ? ' selected' : ''}>Plus bas = mieux</option></select><button class="btn small" type="submit">Fixer l'objectif</button></form>` : ''}
+    ${listeExemple(nom, tabId, e)}
     <span class="mono">Repères sur la courbe (${(notes[k] || []).length})</span>
     <div class="notes">${(notes[k] || []).length ? (notes[k] || []).slice().sort((a, b) => b.date.localeCompare(a.date)).map(r => `<div class="note-l"><div><span class="mono">${fmtDate(r.date)} · ${esc(ROLES[r.de].nom)}</span><p>${esc(r.texte)}</p></div>${r.de === roleId || estSup() ? `<button class="cs-del" data-delnote="${r.t}" aria-label="Retirer ce repère">×</button>` : ''}</div>`).join('') : '<p class="empty">Aucun repère. Note un événement (travaux, jour férié, panne) pour expliquer une variation.</p>'}</div>
     <form class="cmt" id="noteform"><select id="notej" aria-label="Jour">${Array.from({ length: 28 }, (_, i) => { const iso = aujourdhui(-i), d = new Date(iso + 'T12:00:00'); return `<option value="${iso}">${i === 0 ? 'Aujourd\'hui' : d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}</option>`; }).join('')}</select><input id="notet" placeholder="Ex. : travaux en salle" aria-label="Repère" autocomplete="off"><button class="btn small" type="submit">Ajouter</button></form>
@@ -970,6 +980,56 @@ async function liaisonsBilan(nom) {
     } else if (ici()) etat.textContent = (r && r.reseau) ? 'Hors connexion.' : ((r && r.msg) || 'Échec de la génération.');
   });
   charger(false);
+}
+/* ---------- Onglet FDM : exemples de listes (inventaire de fin de mois, écart statistique) ---------- */
+/* [catégorie, produit, unité, prix unitaire en €, quantité type en stock] : ordres de grandeur d'un restaurant, pour l'aperçu seulement. */
+const INV_BASE = [
+  ['Viandes et poulet', 'Steak haché 1/10', 'kg', 9.8, 180], ['Viandes et poulet', 'Steak haché 1/4', 'kg', 10.4, 95], ['Viandes et poulet', 'McNuggets', 'kg', 7.6, 140],
+  ['Viandes et poulet', 'Poulet crispy', 'kg', 8.2, 85], ['Viandes et poulet', 'Filet de poisson', 'kg', 9.1, 60], ['Viandes et poulet', 'Bacon', 'kg', 11.5, 22],
+  ['Surgelés', 'Frites surgelées', 'kg', 1.9, 520], ['Surgelés', 'Galettes de pommes de terre', 'kg', 2.8, 45], ['Surgelés', 'Desserts glacés', 'pièce', 0.62, 900],
+  ['Pains', 'Pain Big Mac', 'pièce', 0.21, 1800], ['Pains', 'Pain Maxi', 'pièce', 0.26, 1500], ['Pains', 'Pain 1/10', 'pièce', 0.14, 2600], ['Pains', 'Wraps', 'pièce', 0.19, 700],
+  ['Produits frais', 'Fromage cheddar en tranches', 'kg', 7.2, 130], ['Produits frais', 'Salade', 'kg', 2.4, 40], ['Produits frais', 'Tomates', 'kg', 2.1, 45], ['Produits frais', 'Oignons', 'kg', 1.1, 70], ['Produits frais', 'Cornichons', 'kg', 3.2, 38],
+  ['Sauces', 'Sauce Big Mac', 'kg', 5.6, 90], ['Sauces', 'Ketchup', 'kg', 2.2, 150], ['Sauces', 'Moutarde', 'kg', 2.6, 40],
+  ['Boissons', 'Sirop cola (poche)', 'poche', 38, 55], ['Boissons', 'Sirop fruité (poche)', 'poche', 36, 30], ['Boissons', 'Café en grains', 'kg', 11.5, 30],
+  ['Emballages', 'Boîtes burger', 'carton', 34, 70], ['Emballages', 'Sacs papier', 'carton', 26, 60], ['Emballages', 'Barquettes frites', 'carton', 31, 50], ['Emballages', 'Gobelets', 'carton', 28, 40]
+];
+function tableauListe(entetes, lignes, classe) {
+  return `<div class="tableau"><table class="liste"><thead><tr>${entetes.map((x, i) => `<th${i ? '' : ' class="g"'}>${esc(x)}</th>`).join('')}</tr></thead><tbody>${lignes.join('')}</tbody></table></div>`;
+}
+/* Inventaire : le total (en haut du panneau, c'est la valeur de la case) est réparti sur les produits ; la dernière ligne absorbe l'arrondi. */
+function listeInventaire(e, nom, tabId) {
+  const h = hachage(nom + tabId + (restoActif() || 'tous') + 'inv'), total = e.v;
+  const base = INV_BASE.map(([cat, p, u, prix, q], i) => ({ cat, p, u, prix, q: q * (0.88 + ((h >>> (i % 20)) % 25) / 100) }));
+  const brut = base.reduce((s, x) => s + x.q * x.prix, 0), f = total * 0.965 / brut;
+  const lignes = base.map(x => { const dec = x.u === 'kg' ? 0 : x.u === 'pièce' ? -1 : 0; let q = x.q * f; q = dec < 0 ? Math.round(q / 10) * 10 : Math.round(q); return { ...x, q, val: q * x.prix }; });
+  const somme = lignes.reduce((s, x) => s + x.val, 0), reste = Math.max(0, total - somme);
+  const cats = [...new Set(lignes.map(x => x.cat))];
+  const corps = [];
+  cats.forEach(c => {
+    const l = lignes.filter(x => x.cat === c), st = l.reduce((s, x) => s + x.val, 0);
+    corps.push(`<tr class="cat"><td class="g">${esc(c)}</td><td></td><td>${fmtDec(st, 0)} €</td></tr>`);
+    l.forEach(x => corps.push(`<tr><td class="g">${esc(x.p)}<small>${fmtDec(x.prix, 2)} € / ${esc(x.u)}</small></td><td>${fmtDec(x.q, 0)} ${esc(x.u)}</td><td>${fmtDec(x.val, 0)} €</td></tr>`));
+  });
+  corps.push(`<tr><td class="g">Divers et petit matériel</td><td></td><td>${fmtDec(reste, 0)} €</td></tr>`);
+  corps.push(`<tr class="tot"><td class="g">Total de l'inventaire</td><td>${lignes.length} produits</td><td>${fmtDec(total, 0)} €</td></tr>`);
+  return `<span class="mono">Montant total de l'inventaire : ${fmtDec(total, 0)} €</span><span class="mono">Liste de l'inventaire (exemple)</span>` + tableauListe(['Produit', 'Quantité', 'Valeur'], corps);
+}
+/* Écart statistique : les écarts les plus coûteux, produit par produit (théorique = ce qui aurait dû être consommé, réel = ce qui l'a été). */
+function listeEcart(e, nom, tabId) {
+  const h = hachage(nom + tabId + (restoActif() || 'tous') + 'ecart'), global = e.v;
+  const choix = ['Steak haché 1/10', 'Steak haché 1/4', 'McNuggets', 'Poulet crispy', 'Filet de poisson', 'Frites surgelées', 'Pain Big Mac', 'Fromage cheddar en tranches', 'Sauce Big Mac', 'Salade', 'Bacon', 'Sirop cola (poche)'].map(n => INV_BASE.find(x => x[1] === n));
+  const l = choix.map(([, p, u, prix, q], i) => { const theo = q * 2.6 * (0.9 + ((h >>> (i % 18)) % 21) / 100), r = (((h >>> (i + 3)) % 100) / 100), raw = i % 6 === 4 ? -(0.1 + 0.2 * r) : 0.5 + (r - 0.5) * 0.9; return { p, u, prix, theo, raw }; });
+  const poids = l.reduce((s, x) => s + x.theo * x.prix, 0), moy = l.reduce((s, x) => s + x.raw * x.theo * x.prix, 0) / poids, k = moy > 0.05 ? global / moy : 1;
+  const L = l.map(x => { const pc = x.raw * k, ecart = pc / 100 * x.theo; return { ...x, pc, ecart, reel: x.theo + ecart, val: ecart * x.prix }; }).sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
+  const dec = u => u === 'kg' ? 1 : 0;
+  const classe = pc => Math.abs(pc) <= 0.5 ? 'ok' : Math.abs(pc) <= 0.8 ? 'lim' : 'ko';
+  const corps = L.map(x => `<tr><td class="g">${esc(x.p)}<small>théorique ${fmtDec(x.theo, dec(x.u))} · réel ${fmtDec(x.reel, dec(x.u))} ${esc(x.u)}</small></td><td class="${classe(x.pc)}">${x.pc >= 0 ? '+' : '−'}${fmtDec(Math.abs(x.pc), 2)} %</td><td>${x.val >= 0 ? '+' : '−'}${fmtDec(Math.abs(x.val), 0)} €</td></tr>`);
+  return `<span class="mono">Écart global : ${fmtDec(global, 2)} % · objectif 0,50 % (orange jusqu'à 0,80 %)</span><span class="mono">Écarts par produit, du plus coûteux au moins coûteux (exemple)</span>` + tableauListe(['Produit', 'Écart', 'Valeur'], corps);
+}
+function listeExemple(nom, tabId, e) {
+  if (nom === 'Inventaire de fin de mois') return listeInventaire(e, nom, tabId);
+  if (nom === 'Écart statistique') return listeEcart(e, nom, tabId);
+  return '';
 }
 function ouvrirModule(nom, tabId) {
   panneau = { nom, tabId };
