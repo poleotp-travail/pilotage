@@ -539,6 +539,7 @@ body.glisse, body.glisse * { cursor: grabbing !important; user-select: none; }
 .bilan-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .bilgrand { font-size: 20px; font-weight: 400; }
 .bilanframe { width: 100%; height: 66vh; min-height: 360px; border: 1px solid var(--line); border-radius: 16px; background: #0b0e14; }
+#drawer.large { width: min(780px, 100%); }
 /* iPhone : un champ dont le texte fait moins de 16 px déclenche un zoom automatique à la saisie. */
 @media (max-width: 700px) { input, select, textarea { font-size: 16px !important; } }
 </style>
@@ -826,7 +827,7 @@ function badges(a) {
 function ouvrirDrawer(html) {
   document.getElementById('dbody').innerHTML = html;
   document.getElementById('scrim').classList.add('on');
-  const d = document.getElementById('drawer'); d.classList.add('on'); d.setAttribute('aria-hidden', 'false');
+  const d = document.getElementById('drawer'); d.classList.toggle('large', !!(panneau && panneau.tabId === 'bilans')); d.classList.add('on'); d.setAttribute('aria-hidden', 'false');
   document.getElementById('dclose').focus();
 }
 function libelleScopeGlobal() { const r = ROLES[roleId]; return r.resto ? RESTOS[r.resto] : (scope === 'tous' ? 'Les 3 restaurants' : RESTOS[scope]); }
@@ -885,6 +886,8 @@ function passerCase(sens) {
 /* ---------- Onglet Bilans : bilans à la demande et prévisions d'affluence ---------- */
 let bilanMeta = null;
 const BILAN_TYPE = { 'Bilan de la veille': 'veille', 'Bilan de la semaine dernière': 'semaine', 'Bilan du mois dernier': 'mois', 'Impact sur l’affluence': 'affluence' };
+/* Mise en page du bilan dans son cadre : fond sombre, pas de marges, cellules resserrées quand la place manque (plus besoin de faire glisser). */
+const STYLE_BILAN = '<meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;background:#0b0e14}table{max-width:100%}td,th{word-break:break-word}@media(max-width:560px){td,th{padding:6px 5px!important;font-size:12px!important;letter-spacing:0!important}}</style>';
 const NOMS_PARTS = { global: 'Les 3 restos', '905': 'Rognac', '525': 'Craux', '649': 'Cognets' };
 function fmtQuand(t) { const d = new Date(t); return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) + ' à ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); }
 async function chargerBilanMeta() {
@@ -920,7 +923,7 @@ async function liaisonsBilan(nom) {
     etat.textContent = 'généré le ' + fmtQuand(r.t) + ' · ' + r.label;
     const cles = ['global', '905', '525', '649'].filter(k => r.parts[k]);
     const afficher = k => {
-      corps.innerHTML = `<iframe class="bilanframe" sandbox title="${esc(nom)}" srcdoc="${esc(r.parts[k])}"></iframe>`;
+      corps.innerHTML = `<iframe class="bilanframe" sandbox title="${esc(nom)}" srcdoc="${esc(STYLE_BILAN + r.parts[k])}"></iframe>`;
       choix.querySelectorAll('[data-part]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.part === k)));
     };
     choix.innerHTML = cles.length > 1 ? cles.map(k => `<button class="chip" data-part="${k}" aria-pressed="false">${NOMS_PARTS[k]}</button>`).join('') : '';
