@@ -902,10 +902,10 @@ function carteBilan(nom, pos) {
 function htmlBilan(nom) {
   const ty = BILAN_TYPE[nom], aff = ty === 'affluence';
   return `${posHtml(infoTab('bilans'), nom)}<span class="mono">Opérations · Bilans</span><h3>${esc(nom)}</h3>
-    <div class="bilan-bar"><button class="btn small" id="bilangen">${aff ? 'Actualiser' : 'Générer'}</button><span class="mono" id="bilanetat"></span></div>
+    <div class="bilan-bar"><button class="btn small" id="bilangen">${aff ? 'Actualiser' : 'Générer'}</button>${aff || ty === 'veille' ? '' : '<button class="btn small" id="bilania">Générer avec analyse</button>'}<span class="mono" id="bilanetat"></span></div>
     <div id="bilanparts" class="chips"></div>
     <div id="bilancorps"><p class="empty">Chargement…</p></div>
-    <p class="dnote">${aff ? 'Météo, jours fériés, vacances scolaires et veille web (grèves, événements, travaux) pour les 7 prochains jours. La veille web se met à jour chaque jour et chaque dimanche à 18 h.' : 'Le bilan est calculé à partir des fichiers de suivi, sans IA : il ne coûte rien. La génération prend environ une minute.'}</p>`;
+    <p class="dnote">${aff ? 'Météo, jours fériés, vacances scolaires et veille web (grèves, événements, travaux) pour les 7 prochains jours. La veille web se met à jour chaque jour et chaque dimanche à 18 h.' : '« Générer » calcule le bilan à partir des fichiers de suivi, sans IA : il ne coûte rien, environ une minute.' + (ty === 'veille' ? '' : ' « Générer avec analyse » demande en plus à l\'IA de rédiger l\'analyse et les remarques (quelques centimes, 2 à 4 minutes).') + ''}</p>`;
 }
 function htmlAffluence(r) {
   if (!r.lignes.length) return '<p class="empty">Rien de particulier prévu dans les 7 prochains jours.</p>';
@@ -943,6 +943,27 @@ async function liaisonsBilan(nom) {
     btn.disabled = false;
     if (r && r.ok) { bilanMeta = Object.assign(bilanMeta || {}, { [ty]: { t: r.t, label: r.label } }); if (ici()) await charger(); renderApp(); }
     else if (ici()) etat.textContent = (r && r.reseau) ? 'Hors connexion.' : ((r && r.msg) || 'Échec de la génération.');
+  });
+  const ia = document.getElementById('bilania');
+  if (ia) ia.addEventListener('click', async () => {
+    ia.disabled = btn.disabled = true; etat.textContent = 'Lancement de l\'analyse…';
+    const l = await appel({ a: 'bilania', type: ty });
+    if (!(l && l.ok)) { ia.disabled = btn.disabled = false; if (ici()) etat.textContent = (l && l.reseau) ? 'Hors connexion.' : ((l && l.msg) || 'Échec du lancement.'); return; }
+    const t0 = Date.now(); let st = 'attente';
+    while (Date.now() - t0 < 8 * 60000) {
+      await new Promise(r => setTimeout(r, 15000));
+      if (!ici()) break;
+      const s = await appel({ a: 'bilaniaetat', type: ty, depuis: String(l.depuis) });
+      if (s && s.ok) { st = s.etat; etat.textContent = st === 'attente' ? 'Analyse en file d\'attente…' : 'Analyse en cours, environ 2 à 4 minutes…'; if (st === 'fini' || st === 'echec') break; }
+    }
+    if (ici()) etat.textContent = 'Mise en page du bilan…';
+    const r = await appel({ a: 'bilangen', type: ty });
+    ia.disabled = btn.disabled = false;
+    if (r && r.ok) {
+      bilanMeta = Object.assign(bilanMeta || {}, { [ty]: { t: r.t, label: r.label } });
+      if (ici()) { await charger(); etat.textContent += st === 'fini' ? ' · avec analyse' : ' · sans analyse (l\'analyse n\'a pas abouti)'; }
+      renderApp();
+    } else if (ici()) etat.textContent = (r && r.reseau) ? 'Hors connexion.' : ((r && r.msg) || 'Échec de la génération.');
   });
   charger(false);
 }
