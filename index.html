@@ -1334,7 +1334,7 @@ function htmlReglages() {
       <label class="chk"><input type="checkbox" data-actif="${k}" ${ri.actif ? 'checked' : ''} ${mon ? 'disabled' : ''}><span>Code actif${mon ? ' (le tien, toujours actif)' : ''}</span></label></article>`;
   }).join('');
   return `<span class="mono">${esc(ROLES[roleId].nom)}</span><h3>Réglages</h3>
-    <p class="dnote">Les codes sont gardés sur le serveur et ne sont jamais lisibles. Pour en changer un, tape le nouveau code et appuie sur « Changer ». Désactive un code si la personne part.</p>${lignes}`;
+    <p class="dnote">Les codes sont gardés sur le serveur et ne sont jamais lisibles. Pour en changer un, tape le nouveau code (8 caractères minimum, avec au moins un signe spécial comme @ ou !) et appuie sur « Changer ». Les codes actuels restent valables. Désactive un code si la personne part.</p>${lignes}`;
 }
 async function ouvrirReglages() {
   panneau = 'reglages'; ouvrirDrawer(htmlReglages()); liaisonsReglages();
@@ -1346,6 +1346,7 @@ function liaisonsReglages() {
   corps.querySelectorAll('[data-savecode]').forEach(b => b.addEventListener('click', async () => {
     const k = b.dataset.savecode, v = corps.querySelector('[data-code="' + k + '"]').value.trim().toUpperCase(), err = corps.querySelector('[data-err="' + k + '"]');
     if (!v) return;
+    const regle = regleCode(v); if (regle) { err.textContent = regle; return; }
     b.disabled = true; const r = await appel({ a: 'regcode', role: k, code: v }); b.disabled = false;
     if (!r.ok) { err.textContent = r.msg || 'Impossible de changer ce code.'; return; }
     regInfos = r.reg; corps.innerHTML = htmlReglages(); liaisonsReglages();
@@ -1361,7 +1362,7 @@ function liaisonsReglages() {
 function ouvrirMonCode() {
   panneau = 'moncode';
   ouvrirDrawer(`<span class="mono">${esc(ROLES[roleId].nom)}</span><h3>Mon code</h3>
-    <p class="dnote">Change le code qui t'ouvre cet espace. Il faut redonner ton code actuel. Le serveur n'en garde qu'une version brouillée : personne, pas même le superviseur, ne peut le lire.</p>
+    <p class="dnote">Change le code qui t'ouvre cet espace. Il faut redonner ton code actuel. Le nouveau code doit faire 8 caractères minimum, avec au moins un signe spécial (@ ! # $ % & * + . ? _ = : ; , ~ ^ ( ) /). Le serveur n'en garde qu'une version brouillée : personne, pas même le superviseur, ne peut le lire.</p>
     <form class="cform" id="moncodeform" autocomplete="off">
       <label><span class="mono">Code actuel</span><input class="cs-note" type="password" id="mc-old" autocomplete="off" autocapitalize="characters" required></label>
       <label><span class="mono">Nouveau code</span><input class="cs-note" type="password" id="mc-new" autocomplete="new-password" autocapitalize="characters" required></label>
@@ -1375,6 +1376,7 @@ function ouvrirMonCode() {
     const ancien = document.getElementById('mc-old').value.trim(), n1 = document.getElementById('mc-new').value.trim(), n2 = document.getElementById('mc-new2').value.trim();
     msg.style.color = '';
     if (n1 !== n2) { msg.textContent = 'Les deux nouveaux codes ne sont pas identiques.'; return; }
+    const regle = regleCode(n1); if (regle) { msg.textContent = regle; return; }
     bt.disabled = true;
     const r = await appel({ a: 'moncode', ancien: ancien, nouveau: n1 });
     bt.disabled = false;
@@ -1653,6 +1655,8 @@ document.getElementById('dclose').addEventListener('click', fermerPanneau);
 addEventListener('keydown', e => { if (e.key === 'Escape') { fermerPanneau(); quitterReunion(); if (document.getElementById('tour')) finTuto(); } });
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && reunion) quitterReunion(); });
 
+/* Règle des nouveaux codes (les anciens restent valables) : 8 caractères minimum, avec au moins un signe spécial. Le serveur la vérifie aussi. */
+function regleCode(c) { return /^.{8,40}$/.test(c) && /[@!#$%&*+.?_=:;,~^()\/]/.test(c) ? '' : '8 caractères minimum, avec au moins un signe spécial (@ ! # $ % & * + . ? _ = : ; , ~ ^ ( ) /).'; }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 function ongletsRole() { return ROLES[roleId].onglets; }
 function marque() { if (!roleId) return MARQUES.tous; return MARQUES[ROLES[roleId].resto || scope] || MARQUES.tous; }
