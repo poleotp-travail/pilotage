@@ -550,6 +550,21 @@ body.glisse, body.glisse * { cursor: grabbing !important; user-select: none; }
 .liste tr.cat td { font-weight: 600; background: var(--panel-2); border-bottom: 0; }
 .liste tr.tot td { font-weight: 600; border-top: 2px solid var(--line); border-bottom: 0; }
 .liste td.ok { color: var(--live); } .liste td.lim { color: var(--warn); } .liste td.ko { color: var(--rvif); }
+.codebox { position: relative; flex: 1; min-width: 0; display: flex; }
+.codebox input { width: 100%; }
+.masque:not(:placeholder-shown) { color: transparent; -webkit-text-fill-color: transparent; caret-color: transparent; }
+.mdots { position: absolute; left: 17px; right: 17px; top: 0; bottom: 0; display: flex; align-items: center; gap: 5px; overflow: hidden; pointer-events: none; }
+.mdots i { flex: none; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); }
+.mdots.logo i { width: 16px; height: 14px; border-radius: 0; -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat; filter: drop-shadow(0 0 4px var(--glow)); }
+.mdots .cur { flex: none; width: 2px; height: 18px; border-radius: 1px; background: var(--accent); visibility: hidden; }
+.codebox:focus-within .mdots .cur { visibility: visible; }
+.codebox:has(.masque:placeholder-shown) .mdots .cur { visibility: hidden; }
+@media (prefers-reduced-motion: no-preference) {
+  .mdots i.pop { animation: mpop .22s cubic-bezier(.3, 1.6, .5, 1); }
+  .codebox:focus-within .mdots .cur { animation: mcur 1s steps(2, start) infinite; }
+}
+@keyframes mpop { from { transform: scale(.3); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes mcur { 50% { opacity: 0; } }
 /* iPhone : un champ dont le texte fait moins de 16 px déclenche un zoom automatique à la saisie. */
 @media (max-width: 700px) { input, select, textarea { font-size: 16px !important; } }
 </style>
@@ -1934,11 +1949,24 @@ function renderLogin(erreur) {
     <div class="mark"><i></i><b>${marque()}</b></div>
     <h1>Pilotage des restaurants</h1>
     <form id="f" class="field" autocomplete="off">
-      <input id="code" type="text" placeholder="Code d'accès" aria-label="Code d'accès" autocapitalize="characters" spellcheck="false">
+      <div class="codebox"><input id="code" class="masque" type="password" placeholder="Code d'accès" aria-label="Code d'accès" autocomplete="off" autocapitalize="characters" spellcheck="false"><div class="mdots" id="mdots" aria-hidden="true"><b class="cur"></b></div></div>
       <button class="btn" type="submit" id="entrerbtn">Entrer</button>
     </form>
     <p class="err" id="err">${erreur ? esc(erreur) : ''}</p>
   </div></div>`;
+  /* Le code reste un vrai champ « mot de passe » (rien de lisible, pas de suggestions du clavier) ; à la place des points, une arche McDo par caractère. */
+  (() => {
+    const code = document.getElementById('code'), md = document.getElementById('mdots'); let nb = 0;
+    const max = () => Math.max(1, Math.floor((md.clientWidth + 4) / 21));
+    const dessin = () => {
+      const n = Math.min(code.value.length, max()), cur = md.querySelector('.cur');
+      while (nb < n) { const i = document.createElement('i'); i.className = 'pop'; md.insertBefore(i, cur); nb++; }
+      while (nb > n) { md.querySelector('i:last-of-type').remove(); nb--; }
+    };
+    ['input', 'change', 'keyup', 'focus'].forEach(ev => code.addEventListener(ev, dessin));
+    const iv = setInterval(() => { if (!document.body.contains(code)) clearInterval(iv); else dessin(); }, 400);   /* remplissage automatique du navigateur */
+    chargerLogoM().then(lm => { if (lm && md.isConnected) { md.style.setProperty('--m', 'url(' + lm.url + ')'); md.classList.add('logo'); } });
+  })();
   document.getElementById('f').addEventListener('submit', async e => {
     e.preventDefault();
     const v = document.getElementById('code').value.trim();
