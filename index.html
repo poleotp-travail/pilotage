@@ -918,39 +918,47 @@ function fermerPanneau() {
 
 /* ---------- Valeurs d'exemple : écart de comparaison et ancienneté ---------- */
 function hachage(t) { let h = 0; for (const c of t) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; }
-/* Exemples cohérents : pour les cases dont on connaît l'ordre de grandeur, une plage réaliste, une unité et un objectif. Les autres gardent des valeurs d'exemple libres.
-   Les objectifs et plages ci-dessous sont des hypothèses d'aperçu, à corriger avec les vrais objectifs. */
+/* Exemples cohérents : pour les cases dont on connaît l'ordre de grandeur, une plage réaliste, une unité et un objectif.
+   obj = objectif ; lim = seuil du rouge (entre obj et lim = orange) ; sans = suivi sans objectif ; echelle = la valeur grandit avec la période et le nombre de restaurants ; entier = nombre entier.
+   Les objectifs viennent de Théo (13/11/2026) ; les cases absentes de cette liste gardent des valeurs d'exemple libres. */
 const PROFILS = {
   'Marge théorique': { unit: ' %', dec: 1, obj: 75, sens: 'haut', plage: [73.5, 77.5] },
-  'Écart statistique': { unit: ' %', dec: 2, obj: 0.5, lim: 0.8, sens: 'bas', plage: [0.35, 0.95] },   /* vert jusqu'à 0,50 ; orange de 0,50 à 0,80 ; rouge au-dessus */
+  'Écart statistique': { unit: ' %', dec: 2, obj: 0.5, lim: 0.8, sens: 'bas', plage: [0.35, 0.95] },
   'Pertes': { unit: ' %', dec: 2, obj: 0.75, sens: 'bas', plage: [0.6, 0.92] },
-  'Temps de service': { unit: ' s', dec: 0, obj: 310, sens: 'bas', plage: [285, 335] },
-  'Hello McDo': { unit: ' %', dec: 1, obj: 95, sens: 'haut', plage: [90, 97.5] },
+  'Temps de service': { unit: ' s', dec: 0, obj: 310, lim: 400, sens: 'bas', plage: [285, 420] },
+  'Hello McDo': { unit: ' %', dec: 1, obj: 95, lim: 90, sens: 'haut', plage: [88, 98] },
   'Avis Google': { unit: ' / 5', dec: 1, obj: 4.2, sens: 'haut', plage: [4.0, 4.5] },
-  'Inventaire de fin de mois': { unit: ' €', dec: 0, obj: 0, sans: true, sens: 'haut', plage: [14200, 18400] }   /* pas d'objectif sur l'inventaire */
+  'Balance check': { unit: ' %', dec: 1, obj: 20, sens: 'bas', plage: [16.5, 24] },
+  'Rapport DSA': { unit: ' %', dec: 1, obj: 100, sens: 'haut', plage: [97.5, 101.5], max: 100 },
+  'Connexions Sirius': { unit: ' / 4', dec: 0, obj: 4, sens: 'haut', plage: [2.6, 4.4], entier: true },
+  'Inventaire de fin de mois': { unit: ' €', dec: 0, obj: 0, sans: true, sens: 'haut', plage: [14200, 18400] },
+  'Chiffre d’affaires': { unit: ' €', dec: 0, obj: 0, sans: true, sens: 'haut', plage: [8500, 13000], echelle: true },
+  'Affluence': { unit: ' clients', dec: 0, obj: 0, sans: true, sens: 'haut', plage: [1100, 1800], echelle: true },
+  'Hebdomadaire': { sans: true }, 'Mensuel': { sans: true }, 'Trimestriel': { sans: true }, 'Annuel': { sans: true }
 };
 function fmtDec(n, d) { return n.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }); }
 function fmtO(n, e) { return e.dec == null ? fmtNum(n) : fmtDec(n, e.dec) + (e.unit || ''); }
 function exemple(nom, ongletId) {
-  const P = PERIODES[periode], h = hachage(nom + ongletId + periode + (jourRef || '')), n = P.n, pf = PROFILS[nom];
+  const P = PERIODES[periode], h = hachage(nom + ongletId + periode + (jourRef || '')), n = P.n, pf = PROFILS[nom], pv = pf && pf.plage ? pf : null;
   const serie = new Array(n); let v;
-  if (pf) {
-    const [a, b] = pf.plage;
-    for (let k = 0; k < n; k++) serie[k] = a + (((h >>> (3 + 2 * k)) % 1000) / 1000) * (b - a);
+  if (pv) {
+    const mult = pv.echelle ? ({ jour: 1, sem: 7, mois: 30 }[periode] || 1) * ((typeof roleId !== 'undefined' && roleId && typeof restosScope === 'function') ? restosScope().length : 1) : 1;
+    const [a, b] = pv.plage;
+    for (let k = 0; k < n; k++) { let x = (a + (((h >>> (3 + 2 * k)) % 1000) / 1000) * (b - a)) * mult; if (pv.max != null) x = Math.min(x, pv.max); serie[k] = pv.entier ? Math.round(x) : x; }
     v = serie[n - 1];
   } else v = 10 + (h % 9000) / 100;
-  const val = pf ? fmtDec(v, pf.dec) + pf.unit : fmtNum(v);
-  const dPrev = pf ? (v / serie[n - 2] - 1) * 100 : (((h >>> 3) % 140) / 10 - 5);
-  const dN1 = pf ? (hachage(nom + ongletId + 'n1' + periode) % 40) / 10 - 2 : ((hachage(nom + ongletId + 'n1' + periode) % 200) / 10 - 8);
+  const val = pv ? fmtDec(v, pv.dec) + pv.unit : fmtNum(v);
+  const dPrev = pv ? (serie[n - 2] ? (v / serie[n - 2] - 1) * 100 : 0) : (((h >>> 3) % 140) / 10 - 5);
+  const dN1 = pv ? (hachage(nom + ongletId + 'n1' + periode) % 40) / 10 - 2 : ((hachage(nom + ongletId + 'n1' + periode) % 200) / 10 - 8);
   const d = comparer === 'N-1' ? dN1 : dPrev, delta = (d >= 0 ? '+' : '−') + Math.abs(d).toFixed(1).replace('.', ',') + ' %';
   const heures = [0.3, 1, 2, 3, 5, 8, 12, 20, 30, 52][(h >>> 5) % 10];
   const fraicheur = jourRef ? 'au ' + fmtCourt(jourRef) : heures < 1 ? 'il y a ' + Math.round(heures * 60) + ' min' : heures < 24 ? 'il y a ' + heures + ' h' : 'il y a ' + Math.floor(heures / 24) + ' j';
-  if (!pf) {
+  if (!pv) {
     serie[n - 1] = v; serie[n - 2] = v / (1 + dPrev / 100);
     for (let k = n - 3; k >= 0; k--) serie[k] = serie[k + 1] * (1 + ((((h >>> (7 + k)) % 21) - 10) / 100));
   }
-  const obj0 = pf ? pf.obj : Math.round(v * (0.88 + ((h >>> 13) % 31) / 100) * 10) / 10;
-  return { val, v, delta, up: d >= 0, fraicheur, stale: !jourRef && heures > 24, serie, obj0, sens0: pf ? pf.sens : 'haut', lim0: pf ? pf.lim : undefined, sansObj: !!(pf && pf.sans), dec: pf ? pf.dec : null, unit: pf ? pf.unit : '' };
+  const obj0 = pv ? pv.obj : Math.round(v * (0.88 + ((h >>> 13) % 31) / 100) * 10) / 10;
+  return { val, v, delta, up: d >= 0, fraicheur, stale: !jourRef && heures > 24, serie, obj0, sens0: pv ? pv.sens : 'haut', lim0: pv ? pv.lim : undefined, sansObj: !!(pf && pf.sans), dec: pv ? pv.dec : null, unit: pv ? pv.unit : '' };
 }
 
 /* ---------- Consignes ---------- */
