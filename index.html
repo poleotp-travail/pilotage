@@ -805,6 +805,7 @@ const AUTO_SEUIL = 3;
 function infoTab(id) { return GROUPES.flatMap(g => g.onglets).find(o => o.id === id); }
 function autoAlerte(tab, nom) {
   if (etatsSim.auto[tab + '|' + nom]) return AUTO_SEUIL;
+  if (FDM_CASES[nom] && fdmReel(nom) === null) return 0;
   const sv = { periode, jourRef, comparer };
   periode = 'sem'; jourRef = null; comparer = 'prev';
   let n = 0;
@@ -864,7 +865,7 @@ function ouvrirDrawer(html) {
 function libelleScopeGlobal() { const r = ROLES[roleId]; return r.resto ? RESTOS[r.resto] : (scope === 'tous' ? 'Les 3 restaurants' : RESTOS[scope]); }
 function htmlModule(nom, tabId) {
   const info = GROUPES.flatMap(g => g.onglets).find(o => o.id === tabId), groupe = GROUPES.find(g => g.onglets.some(o => o.id === tabId));
-  if (etatsSim.manque[cle(tabId, nom)]) return `${posHtml(info, nom)}<span class="mono">${esc(groupe.nom)} · ${esc(info.nom)}</span><h3>${esc(nom)}</h3><span class="mono">${esc(libelleScopeGlobal())}</span><div class="hatch"></div><div class="nd-lab"><i></i>Donnée non reçue</div><p class="dnote">Le robot n'a rien déposé pour cette case. Au lieu d'un chiffre trompeur, rien n'est affiché. Dès que la donnée arrive, la case reprend son aspect normal.</p>`;
+  if (manqueCase(tabId, nom)) return `${posHtml(info, nom)}<span class="mono">${esc(groupe.nom)} · ${esc(info.nom)}</span><h3>${esc(nom)}</h3><span class="mono">${esc(libelleScopeGlobal())}</span><div class="hatch"></div><div class="nd-lab"><i></i>Donnée non reçue</div><p class="dnote">Le robot n'a rien déposé pour cette case. Au lieu d'un chiffre trompeur, rien n'est affiché. Dès que la donnée arrive, la case reprend son aspect normal.</p>`;
   const e = exemple(nom, tabId), o = objectifDe(tabId, nom, e), st = statutObj(e.v, o), k = cle(tabId, nom), fils = commentaires[k] || [];
   const sup = estSup();
   const pct = Math.max(4, Math.min(100, Math.round((o.sens === 'bas' ? o.obj / e.v : e.v / o.obj) * 100)));
@@ -1050,7 +1051,7 @@ function listeEcart(e, nom, tabId) {
 }
 function listeExemple(nom, tabId, e) {
   if (nom === 'Inventaire de fin de mois') return listeInventaire(e, nom, tabId);
-  if (nom === 'Écart statistique') return listeEcart(e, nom, tabId);
+  if (nom === 'Écart statistique') return fdmReel(nom) ? listeEcartReel() : listeEcart(e, nom, tabId);
   return '';
 }
 function ouvrirModule(nom, tabId) {
@@ -1113,7 +1114,63 @@ const PROFILS = {
 };
 function fmtDec(n, d) { return n.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }); }
 function fmtO(n, e) { return e.dec == null ? fmtNum(n) : fmtDec(n, e.dec) + (e.unit || ''); }
+/* ---------- Vrais chiffres de fin de mois (robot kywFdm, mails ECART STAT / FC FDM) : cases « Écart statistique » et « Pertes » ---------- */
+let FDM, FDMt = 0, FDMrole = null, FDMenCours = false;
+const FDM_CASES = { 'Écart statistique': 'ecart', 'Pertes': 'pertes' };
+const FDM_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+function fdmCharger() {
+  if (!roleId || FDMenCours) return;
+  if (FDMrole !== roleId) { FDMrole = roleId; FDM = undefined; FDMt = 0; }
+  if (!(ROLES[roleId].onglets || []).some(o => o === 'fdm' || o === 'financier')) return;
+  if (FDM !== undefined && Date.now() - FDMt < 1800000) return;
+  FDMenCours = true;
+  appel({ a: 'fdm' }).then(r => {
+    FDMenCours = false;
+    if (r && r.ok) { FDM = r.d || {}; FDMt = Date.now(); } else { if (FDM === undefined) FDM = {}; FDMt = Date.now() - 1500000; }   // échec : nouvel essai dans 5 min
+    if (roleId) renderApp();
+  });
+}
+function fdmLabelMois(m) { const [a, k] = m.split('-'); const n = FDM_MOIS[Number(k) - 1]; return (n ? n.charAt(0).toUpperCase() + n.slice(1) : m) + ' ' + a; }
+/* Valeur du mois m (AAAA-MM) pour les restaurants du périmètre ayant des données : écart = |total des écarts| / ventes nettes ; pertes = moyenne des % */
+function fdmValeurMois(type, m) {
+  const pts = restosScope().map(r => FDM && FDM[r] && FDM[r][m] && FDM[r][m][type] ? { r, d: FDM[r][m][type], maj: FDM[r][m].maj } : null).filter(Boolean);
+  if (!pts.length) return null;
+  let v;
+  if (type === 'ecart') { const mont = pts.reduce((s, x) => s + x.d.montant, 0), ven = pts.reduce((s, x) => s + (x.d.ventes || 0), 0); v = ven > 0 ? Math.abs(mont / ven * 100) : Math.abs(pts.reduce((s, x) => s + x.d.pct, 0) / pts.length); }
+  else v = pts.reduce((s, x) => s + x.d.pct, 0) / pts.length;
+  return { v, pts };
+}
+function fdmMoisDispo(type) {
+  const set = new Set();
+  restosScope().forEach(r => { const d = FDM && FDM[r]; if (d) Object.keys(d).forEach(m => { if (d[m] && d[m][type]) set.add(m); }); });
+  return [...set].sort();
+}
+function fdmReel(nom) {
+  const type = FDM_CASES[nom]; if (!type || !FDM) return null;
+  const mois = fdmMoisDispo(type).slice(-6); if (!mois.length) return null;
+  const pf = PROFILS[nom], pts = mois.map(m => fdmValeurMois(type, m)), last = pts[pts.length - 1], v = last.v;
+  const serie = pts.map(x => x.v); if (serie.length < 2) serie.unshift(v);
+  const prec = pts.length > 1 ? pts[pts.length - 2].v : null, d = prec ? (v / prec - 1) * 100 : 0;
+  const partiel = last.pts.length < restosScope().length ? ' · ' + last.pts.map(x => RESTOS[x.r]).join(', ') + ' seulement' : '';
+  const recu = (last.pts[0].d.recu || '').slice(0, 10);
+  return { val: fmtDec(v, pf.dec) + pf.unit, v, delta: prec ? (d >= 0 ? '+' : '−') + Math.abs(d).toFixed(1).replace('.', ',') + ' %' : 'n/d', up: d >= 0,
+    fraicheur: fdmLabelMois(mois[mois.length - 1]) + (recu ? ' · reçu le ' + recu : '') + partiel, stale: false, serie, obj0: pf.obj, sens0: pf.sens, lim0: pf.lim, sansObj: false, dec: pf.dec, unit: pf.unit };
+}
+function manqueCase(tab, nom) { return !!etatsSim.manque[cle(tab, nom)] || (!!FDM_CASES[nom] && fdmReel(nom) === null); }
+function listeEcartReel() {
+  const mois = fdmMoisDispo('ecart').slice(-1)[0], pts = restosScope().map(r => FDM[r] && FDM[r][mois] && FDM[r][mois].ecart).filter(Boolean);
+  const som = k => pts.reduce((s, x) => s + (x[k] || 0), 0), ven = som('ventes'), tot = som('montant'), neg = som('negMontant'), pos = som('posMontant');
+  const pc = x => ven > 0 ? x / ven * 100 : 0, fe = x => (x >= 0 ? '+' : '−') + fmtDec(Math.abs(x), 0) + ' €', fp = x => (x >= 0 ? '+' : '−') + fmtDec(Math.abs(x), 2) + ' %';
+  const g = Math.abs(pc(tot)), classe = g <= 0.5 ? 'ok' : g <= 0.8 ? 'lim' : 'ko';
+  const corps = [
+    `<tr><td class="g">Écarts négatifs</td><td>${fe(neg)}</td><td>${fp(pc(neg))}</td></tr>`,
+    `<tr><td class="g">Écarts positifs</td><td>${fe(pos)}</td><td>${fp(pc(pos))}</td></tr>`,
+    `<tr class="tot"><td class="g">Total des écarts</td><td>${fe(tot)}</td><td class="${classe}">${fp(pc(tot))}</td></tr>`,
+    `<tr><td class="g">Ventes nettes</td><td>${fmtDec(ven, 0)} €</td><td></td></tr>`];
+  return `<span class="mono">Écart global : ${fmtDec(g, 2)} % · objectif 0,50 % (orange jusqu'à 0,80 %)</span><span class="mono">Détail de ${esc(fdmLabelMois(mois))} (chiffres réels)</span>` + tableauListe(['', 'Montant', 'Part des ventes'], corps) + `<span class="mono">La liste produit par produit n'est pas encore lue par le robot.</span>`;
+}
 function exemple(nom, ongletId) {
+  const reel = fdmReel(nom); if (reel) return reel;
   const P = PERIODES[periode], h = hachage(nom + ongletId + periode + (jourRef || '')), n = P.n, pf = PROFILS[nom], pv = pf && pf.plage ? pf : null;
   const serie = new Array(n); let v;
   if (pv) {
@@ -2006,6 +2063,7 @@ function ajusterSide() {
 addEventListener('resize', () => { if (roleId) ajusterSide(); });
 function renderApp() {
   const r = ROLES[roleId], cur = courant();
+  fdmCharger();
   const key = roleId + '|' + cur + '|' + scope;
   const anim = key !== lastKey; lastKey = key;
   if (anim) { ouvert = GROUPES.find(g => g.onglets.some(o => o.id === cur)).id; fermerPanneau(); }
@@ -2021,7 +2079,7 @@ function renderApp() {
   const aRobot = r.onglets.some(t => etat(t).robot > 0), aAlerte = r.onglets.some(t => etat(t).alerte > 0), aVivant = vifs.size > 0;
   const legParts = (aVivant ? '<span><i class="dot live"></i>Personne connectée</span>' : '') + (aRobot ? '<span><i style="background:var(--rvif)"></i>Robot en erreur</span>' : '') + (aAlerte ? '<span><i style="background:var(--rfonce)"></i>Alerte à traiter</span>' : '');
   const legende = legParts ? `<div class="legend2 mono">${legParts}</div>` : '';
-  const aStale = !etatsSim.chargement && info.prevu.some(p => !etatsSim.manque[cle(info.id, p)] && exemple(p, info.id).stale), aManque = !etatsSim.chargement && info.prevu.some(p => etatsSim.manque[cle(info.id, p)]);
+  const aStale = !etatsSim.chargement && info.prevu.some(p => !manqueCase(info.id, p) && exemple(p, info.id).stale), aManque = !etatsSim.chargement && info.prevu.some(p => manqueCase(info.id, p));
   const legEtats = (aStale ? '<span class="e-stale"><i></i>Ancienne : plus de 24 h</span>' : '') + (aManque ? '<span class="e-nd"><i></i>Donnée non reçue</span>' : '');
   const simE = `<div class="sim">
       <span class="mono">États d'exemple (aperçu seulement)</span>
@@ -2079,7 +2137,7 @@ function renderApp() {
       </header>
       ${htmlFrise()}
       <section class="modules" aria-label="Contenu de l'onglet">
-        ${ordreCases(info).map((p, pos) => { const i = info.prevu.indexOf(p); if (info.id === 'bilans' && !etatsSim.chargement) return carteBilan(p, pos); if (etatsSim.chargement) return `<article class="mod loading" aria-busy="true" style="--i:${pos + 1}"><div class="sk w40"></div><div class="sk w70 h30"></div><div class="sk w100 h30"></div><div class="sk w60"></div></article>`; if (etatsSim.manque[cle(info.id, p)]) return `<article class="mod clic nodata" tabindex="0" role="button" data-mod="${esc(p)}" style="--i:${pos + 1}"><div><span class="mono pill">Emplacement</span><h3>${esc(p)}</h3></div><div class="val"><b>—</b></div><div class="hatch"></div><div class="nd-lab"><i></i>Donnée non reçue</div><div class="foot2"><span class="mono">${esc(libelleScope)}</span><span class="fresh">aucune donnée</span></div></article>`; const e = exemple(p, info.id), o = objectifDe(info.id, p, e), st = statutObj(e.v, o), nc = (commentaires[cle(info.id, p)] || []).length, pct = Math.max(4, Math.min(100, Math.round((o.sens === 'bas' ? o.obj / e.v : e.v / o.obj) * 100))); return `<article class="mod clic${e.stale ? ' stale' : ''}" tabindex="0" role="button" data-mod="${esc(p)}" style="--i:${pos + 1}"><div><span class="mono pill">Emplacement</span><h3>${esc(p)}</h3></div><span class="ctr">${nc ? `<span class="ccount" title="${nc} message${nc > 1 ? 's' : ''}">${ICO_MSG}${nc}</span>` : ''}${badges(ac[i])}</span><div class="val"><b>${e.val}</b><span class="delta ${e.up ? 'up' : 'down'}" title="Écart par rapport à ${comparer === 'prev' ? 'la période précédente' : 'l\'an dernier'}">${e.up ? '▲' : '▼'} ${e.delta} <small>${libComp()}</small></span></div>${spark(e.serie, false, reperesDe(info.id, p, e.serie.length))}${e.sansObj && !objectifs[cle(info.id, p)] ? '<div class="obj"><span class="mono">Pas d\'objectif</span></div>' : `<div class="obj ${st}"><div class="bar"><i style="width:${pct}%"></i></div><span>Obj. ${fmtO(o.obj, e)} · <b>${LIBST[st]}</b></span></div>`}<div class="foot2"><span class="mono">${esc(libelleScope)}</span><span class="fresh">${e.fraicheur} · ${(() => { const rs = restosScope(), st = SITES[p], u = rs.length === 1 ? lienSource(p, rs[0]) : null; if (st) return `<a class="src" href="${st.url}" target="_blank" rel="noopener" data-ext>${st.nom} ↗</a>`; return u ? `<a class="src" href="${u}" target="_blank" rel="noopener" data-ext>fichier ↗</a>` : '<span class="src dim">fichier ↗</span>'; })()}</span></div></article>`; }).join('')}
+        ${ordreCases(info).map((p, pos) => { const i = info.prevu.indexOf(p); if (info.id === 'bilans' && !etatsSim.chargement) return carteBilan(p, pos); if (etatsSim.chargement) return `<article class="mod loading" aria-busy="true" style="--i:${pos + 1}"><div class="sk w40"></div><div class="sk w70 h30"></div><div class="sk w100 h30"></div><div class="sk w60"></div></article>`; if (manqueCase(info.id, p)) return `<article class="mod clic nodata" tabindex="0" role="button" data-mod="${esc(p)}" style="--i:${pos + 1}"><div><span class="mono pill">Emplacement</span><h3>${esc(p)}</h3></div><div class="val"><b>—</b></div><div class="hatch"></div><div class="nd-lab"><i></i>Donnée non reçue</div><div class="foot2"><span class="mono">${esc(libelleScope)}</span><span class="fresh">aucune donnée</span></div></article>`; const e = exemple(p, info.id), o = objectifDe(info.id, p, e), st = statutObj(e.v, o), nc = (commentaires[cle(info.id, p)] || []).length, pct = Math.max(4, Math.min(100, Math.round((o.sens === 'bas' ? o.obj / e.v : e.v / o.obj) * 100))); return `<article class="mod clic${e.stale ? ' stale' : ''}" tabindex="0" role="button" data-mod="${esc(p)}" style="--i:${pos + 1}"><div><span class="mono pill">Emplacement</span><h3>${esc(p)}</h3></div><span class="ctr">${nc ? `<span class="ccount" title="${nc} message${nc > 1 ? 's' : ''}">${ICO_MSG}${nc}</span>` : ''}${badges(ac[i])}</span><div class="val"><b>${e.val}</b><span class="delta ${e.up ? 'up' : 'down'}" title="Écart par rapport à ${comparer === 'prev' ? 'la période précédente' : 'l\'an dernier'}">${e.up ? '▲' : '▼'} ${e.delta} <small>${libComp()}</small></span></div>${spark(e.serie, false, reperesDe(info.id, p, e.serie.length))}${e.sansObj && !objectifs[cle(info.id, p)] ? '<div class="obj"><span class="mono">Pas d\'objectif</span></div>' : `<div class="obj ${st}"><div class="bar"><i style="width:${pct}%"></i></div><span>Obj. ${fmtO(o.obj, e)} · <b>${LIBST[st]}</b></span></div>`}<div class="foot2"><span class="mono">${esc(libelleScope)}</span><span class="fresh">${e.fraicheur} · ${(() => { const rs = restosScope(), st = SITES[p], u = rs.length === 1 ? lienSource(p, rs[0]) : null; if (st) return `<a class="src" href="${st.url}" target="_blank" rel="noopener" data-ext>${st.nom} ↗</a>`; return u ? `<a class="src" href="${u}" target="_blank" rel="noopener" data-ext>fichier ↗</a>` : '<span class="src dim">fichier ↗</span>'; })()}</span></div></article>`; }).join('')}
       </section>
       ${legEtats ? `<div class="fleg mono">${legEtats}</div>` : ''}
       ${ordres[roleId + '|' + info.id] ? '<button class="cs-link" id="resetordre" style="justify-self:start">Remettre l\'ordre d\'origine</button>' : ''}
